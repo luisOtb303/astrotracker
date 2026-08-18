@@ -30,6 +30,17 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   - `tests/smoke_reader`: smoke test de decodificación/seek del reader (CTest).
   - `testdata/moon.mp4`: vídeo sintético de prueba (disco brillante móvil).
 
+### Added
+
+- Fase 3 — Estabilización por traslación:
+  - `TargetPosition`: punto objetivo (por defecto, centro del frame) donde se
+    mantiene el objeto.
+  - `SmoothingFilter`: EMA sobre el centro del objeto para atenuar el jitter.
+  - `Stabilizer`: calcula el desplazamiento (dx, dy) que centra el objeto
+    (`warpAffine` con bordes negros) y expone `target`/`offset`.
+  - `tests/test_stabilizer` (CTest): convergencia del offset, centrado del
+    objeto tras `apply` y atenuación del jitter.
+
 ### Fixed
 
 - `FFmpegVideoReader::convertFrame`: el constructor de `cv::Mat` recibía

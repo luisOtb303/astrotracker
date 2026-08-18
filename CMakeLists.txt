@@ -32,6 +32,11 @@ add_executable(astrotracker
   src/motion/Kalman.cpp
   src/motion/MotionModel.h
   src/motion/MotionModel.cpp
+  src/stabilization/TargetPosition.h
+  src/stabilization/SmoothingFilter.h
+  src/stabilization/SmoothingFilter.cpp
+  src/stabilization/Stabilizer.h
+  src/stabilization/Stabilizer.cpp
 )
 
 target_include_directories(astrotracker PRIVATE src)

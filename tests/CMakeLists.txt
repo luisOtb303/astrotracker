@@ -49,3 +49,18 @@ target_compile_definitions(test_trackers PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(test_trackers PRIVATE ${OpenCV_LIBS})
 
 add_test(NAME test_trackers COMMAND test_trackers)
+
+# Test del estabilizador por traslación (Stabilizer + SmoothingFilter).
+
+add_executable(test_stabilizer test_stabilizer/main.cpp
+  ../src/stabilization/TargetPosition.h
+  ../src/stabilization/SmoothingFilter.h
+  ../src/stabilization/SmoothingFilter.cpp
+  ../src/stabilization/Stabilizer.h
+  ../src/stabilization/Stabilizer.cpp)
+
+target_include_directories(test_stabilizer PRIVATE ../src)
+target_compile_definitions(test_stabilizer PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_stabilizer PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_stabilizer COMMAND test_stabilizer)
