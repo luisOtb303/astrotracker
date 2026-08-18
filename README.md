@@ -118,9 +118,11 @@ compatibles: FFmpeg (GPL), Qt (LGPLv3/GPLv3), OpenCV (Apache-2.0), vid.stab
 
 ## Estado
 
-En desarrollo (Fase 0/1). El MVP cubre: visor de vídeo, selección de ROI, tracking
-(Template/Centroid), Kalman + predicción, estabilización por traslación, preview de
-rango y exportación MP4.
+En desarrollo (Fase 1/2). Completado: visor de vídeo (abrir/reproducir/frame a
+frame/ROI) y núcleo de tracking (TemplateTracker, CentroidTracker, Kalman,
+MotionModel con estados VALID/UNCERTAIN/LOST). Pendiente: estabilización por
+traslación (Fase 3), pipeline de dos pasadas y exportación (Fase 4), preview de
+parámetros (Fase 5).
 
 No está en el MVP: plate solving, astronomía, IA, reconocimiento de Sol/Luna, RAW,
 stacking, wavelets, deconvolution ni calidad planetaria.

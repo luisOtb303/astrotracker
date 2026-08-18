@@ -19,3 +19,33 @@ find_file(MOON_VIDEO moon.mp4
 if(MOON_VIDEO)
   add_test(NAME smoke_reader COMMAND smoke_reader ${MOON_VIDEO})
 endif()
+
+# Test del modelo de movimiento (Kalman + MotionModel).
+
+add_executable(test_motion test_motion/main.cpp
+  ../src/motion/TrackStatus.h
+  ../src/motion/Kalman.h
+  ../src/motion/Kalman.cpp
+  ../src/motion/MotionModel.h
+  ../src/motion/MotionModel.cpp)
+
+target_include_directories(test_motion PRIVATE ../src)
+target_compile_definitions(test_motion PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_motion PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_motion COMMAND test_motion)
+
+# Test de trackers sobre frames sintéticos (disco brillante móvil).
+
+add_executable(test_trackers test_trackers/main.cpp
+  ../src/tracking/ITracker.h
+  ../src/tracking/TemplateTracker.h
+  ../src/tracking/TemplateTracker.cpp
+  ../src/tracking/CentroidTracker.h
+  ../src/tracking/CentroidTracker.cpp)
+
+target_include_directories(test_trackers PRIVATE ../src)
+target_compile_definitions(test_trackers PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_trackers PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_trackers COMMAND test_trackers)

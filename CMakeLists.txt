@@ -22,6 +22,16 @@ add_executable(astrotracker
   src/ui/VideoView.cpp
   src/ui/MainWindow.h
   src/ui/MainWindow.cpp
+  src/tracking/ITracker.h
+  src/tracking/TemplateTracker.h
+  src/tracking/TemplateTracker.cpp
+  src/tracking/CentroidTracker.h
+  src/tracking/CentroidTracker.cpp
+  src/motion/TrackStatus.h
+  src/motion/Kalman.h
+  src/motion/Kalman.cpp
+  src/motion/MotionModel.h
+  src/motion/MotionModel.cpp
 )
 
 target_include_directories(astrotracker PRIVATE src)

@@ -35,3 +35,22 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 - `FFmpegVideoReader::convertFrame`: el constructor de `cv::Mat` recibía
   `(width, height)` en orden inverso (rows/cols), produciendo frames
   transpuestos (480x640 en lugar de 640x480).
+- `Kalman::correct`: la ganancia se calculaba con matrices 4×4 singulares
+  (la medición es 2D); ahora se usa matemática 2×2 y el filtro converge
+  correctamente a posición y velocidad.
+
+### Added
+
+- Fase 2 — Núcleo de tracking:
+  - `ITracker`: interfaz de trackers (init + track), `TrackResult` con
+    confianza y flag `found`.
+  - `TemplateTracker`: `matchTemplate` (TM_CCOEFF_NORMED) en ventana de
+    búsqueda alrededor de la última posición.
+  - `CentroidTracker`: umbral OTSU + componente conexo más grande + centroide;
+    tolerante a oclusión parcial.
+  - `motion/Kalman`: filtro de velocidad constante (x, y, vx, vy) con
+    `predict()`/`correct()`.
+  - `motion/MotionModel`: integra mediciones + predicción y estados
+    `VALID / UNCERTAIN / LOST` con `consecutiveMisses`.
+  - `tests/test_motion` y `tests/test_trackers` (CTest): convergencia de
+    Kalman, transiciones de estado y seguimiento sobre frames sintéticos.
