@@ -11,6 +11,9 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 - Inicialización del repositorio: `AGENTS.md` (decisiones técnicas y comandos de
   build/test), `README.md`, `changelog.md`, `.gitignore`, CMakeLists raíz.
+- `docs/research.md`: investigación (PIPP, vid.stab, OpenCV, FFmpeg, SER Player,
+  Siril) y decisiones de arquitectura.
+- `THIRD_PARTY_LICENSES/index.md`: inventario de licencias y obligaciones.
 - Fase 1 — Visor de vídeo operativo:
   - `FFmpegVideoReader` (libav) funcional: decodifica MP4/H.264 a `cv::Mat` BGR8 vía
     `sws_scale`, seek por PTS, duración/fps/frameCount, corrección de dimensiones
