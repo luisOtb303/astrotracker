@@ -104,6 +104,8 @@ add_executable(test_pipeline test_pipeline/main.cpp
   ../src/tracking/ITracker.h
   ../src/tracking/TemplateTracker.h
   ../src/tracking/TemplateTracker.cpp
+  ../src/tracking/CentroidTracker.h
+  ../src/tracking/CentroidTracker.cpp
   ../src/motion/TrackStatus.h
   ../src/motion/Kalman.h
   ../src/motion/Kalman.cpp

@@ -102,3 +102,32 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 - `tests/test_pipeline`: la ROI de prueba no estaba centrada en el disco y la
   velocidad (9,4 px/frame) producía un lag de suavizado que excedía la
   tolerancia; se centra la ROI en el disco y se usa una deriva lenta realista.
+
+### Added
+
+- Fase 5 — Estabilización desde la UI:
+  - `PipelineSettings`: parámetros del pipeline (tracker Template/Centroid,
+    searchFactor, alpha de suavizado, modo de borde y punto objetivo).
+  - `Pipeline::analyze`/`run` parametrizados con `PipelineSettings`, callback
+    de progreso y `startUs` (permite seguir desde el frame donde se seleccionó
+    la ROI; los frames previos pasan sin estabilizar).
+  - `Stabilizer::setSmoothing`: alpha configurable del suavizado.
+  - `ExportJob` con `PipelineSettings` y progreso.
+  - `PipelineWorker` (QThread): ejecuta la pasada 1 (analizar) o la 1+2
+    (exportar) fuera del hilo de UI, emitiendo progreso y resultado por señales.
+  - `MainWindow`: dos visores lado a lado (Original / Estabilizado) que avanzan
+    sincronizados; toolbar de estabilización (tracker, borde, suavizado) con
+    botones **Seguir**, **Vista previa** y **Exportar...**; barra de progreso en
+    la barra de estado; la ROI seleccionada queda dibujada de forma persistente
+    y el análisis parte del frame en que se eligió.
+  - `VideoView::setRoi`/`clearRoi`/`setRoiEnabled`: overlay de ROI persistente.
+  - `testdata/moon.mp4` regenerado: el disco ahora se desplaza de verdad
+    (el `drawbox` con variable `t` no animaba en este build de ffmpeg; se usa
+    `geq` con `N`).
+
+### Fixed
+
+- `Pipeline::run`: se alinean los offsets con `startUs` (los frames anteriores
+  al inicio del seguimiento se conservan sin transformar, sin descartar nada).
+- `tests/test_pipeline`: se añade `CentroidTracker.cpp` al target (el pipeline
+  ahora lo instancia).

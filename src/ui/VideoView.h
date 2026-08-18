@@ -13,6 +13,9 @@ public:
     explicit VideoView(QWidget* parent = nullptr);
 
     void setFrame(const cv::Mat& frame);
+    void setRoiEnabled(bool enabled);
+    void setRoi(const QRect& roi);
+    void clearRoi();
 
 signals:
     void roiSelected(const QRect& rect);
@@ -25,9 +28,12 @@ protected:
 
 private:
     QRect imageRect() const;
+    QRect toWidget(const QRect& imageRect) const;
 
     QImage image_;
     QPoint selStart_;
     QRect selection_;
+    QRect roi_;
     bool selecting_ = false;
+    bool roiEnabled_ = true;
 };

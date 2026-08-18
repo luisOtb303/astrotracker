@@ -27,6 +27,27 @@ void VideoView::setFrame(const cv::Mat& frame)
     update();
 }
 
+void VideoView::setRoiEnabled(bool enabled)
+{
+    roiEnabled_ = enabled;
+    if (!enabled)
+        selection_ = QRect();
+    update();
+}
+
+void VideoView::setRoi(const QRect& roi)
+{
+    roi_ = roi;
+    update();
+}
+
+void VideoView::clearRoi()
+{
+    roi_ = QRect();
+    selection_ = QRect();
+    update();
+}
+
 QRect VideoView::imageRect() const
 {
     if (image_.isNull())
@@ -36,6 +57,19 @@ QRect VideoView::imageRect() const
     const int w = static_cast<int>(image_.width() * scale);
     const int h = static_cast<int>(image_.height() * scale);
     return QRect((width() - w) / 2, (height() - h) / 2, w, h);
+}
+
+QRect VideoView::toWidget(const QRect& imgRect) const
+{
+    if (imgRect.isEmpty() || image_.isNull())
+        return QRect();
+    const QRect ir = imageRect();
+    const double sx = ir.width() / static_cast<double>(image_.width());
+    const double sy = ir.height() / static_cast<double>(image_.height());
+    return QRect(qRound(ir.left() + imgRect.left() * sx),
+                 qRound(ir.top() + imgRect.top() * sy),
+                 qRound(imgRect.width() * sx),
+                 qRound(imgRect.height() * sy));
 }
 
 void VideoView::paintEvent(QPaintEvent*)
@@ -51,6 +85,11 @@ void VideoView::paintEvent(QPaintEvent*)
 
     p.drawImage(imageRect(), image_);
 
+    if (!roi_.isEmpty()) {
+        p.setPen(QPen(QColor(255, 200, 0), 2));
+        p.drawRect(toWidget(roi_));
+    }
+
     if (!selection_.isEmpty()) {
         p.setPen(QPen(QColor(0, 210, 0), 2));
         p.drawRect(selection_);
@@ -59,7 +98,7 @@ void VideoView::paintEvent(QPaintEvent*)
 
 void VideoView::mousePressEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && !image_.isNull()) {
+    if (roiEnabled_ && event->button() == Qt::LeftButton && !image_.isNull()) {
         selStart_ = event->pos();
         selection_ = QRect(selStart_, QSize());
         selecting_ = true;

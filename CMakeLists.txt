@@ -47,6 +47,7 @@ add_executable(astrotracker
   src/processing/Pipeline.cpp
   src/export/ExportJob.h
   src/export/ExportJob.cpp
+  src/export/PipelineWorker.h
 )
 
 target_include_directories(astrotracker PRIVATE src)

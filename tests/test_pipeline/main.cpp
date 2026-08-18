@@ -66,7 +66,7 @@ int main(int argc, char** argv)
     const cv::Rect2f roi(130.f, 70.f, 40.f, 40.f); // centrado en el disco inicial (150,90)
     PipelineStats stats;
     Pipeline pipeline;
-    if (!pipeline.run(inPath, outPath, roi, BorderMode::Black, &stats)) {
+    if (!pipeline.run(inPath, outPath, roi, PipelineSettings(), &stats)) {
         std::printf("FAIL: el pipeline no completó\n");
         return 1;
     }

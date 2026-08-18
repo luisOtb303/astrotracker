@@ -25,6 +25,7 @@ public:
     cv::Point2f offset() const { return offset_; }
     TargetPosition target() const { return target_; }
     void setTarget(const TargetPosition& target) { target_ = target; }
+    void setSmoothing(float alpha) { smoother_.setAlpha(alpha); }
 
 private:
     TargetPosition target_;

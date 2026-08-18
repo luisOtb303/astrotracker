@@ -1,7 +1,6 @@
 #pragma once
 
 #include "processing/Pipeline.h"
-#include "processing/BorderHandler.h"
 
 #include <string>
 
@@ -19,7 +18,9 @@ public:
 
     Result run(const std::string& inPath, const std::string& outPath,
                const cv::Rect2f& roi,
-               BorderMode borderMode = BorderMode::Black);
+               const PipelineSettings& settings = PipelineSettings(),
+               const PipelineProgress& progress = PipelineProgress(),
+               int64_t startUs = 0);
 
 private:
     Pipeline pipeline_;

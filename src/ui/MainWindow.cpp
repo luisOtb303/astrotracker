@@ -3,13 +3,18 @@
 #include "ui/VideoView.h"
 #include "video/IVideoReader.h"
 #include "video/FFmpegVideoReader.h"
+#include "processing/FrameTransformer.h"
+#include "export/PipelineWorker.h"
 
 #include <QAction>
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProgressBar>
 #include <QSlider>
 #include <QStatusBar>
 #include <QStyle>
@@ -18,6 +23,7 @@
 #include <QVBoxLayout>
 #include <QTime>
 #include <algorithm>
+#include <cmath>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -27,6 +33,7 @@ MainWindow::MainWindow(QWidget* parent)
     timer_->setInterval(33);
     connect(timer_, &QTimer::timeout, this, &MainWindow::onTimer);
     connect(view_, &VideoView::roiSelected, this, &MainWindow::onRoiSelected);
+    updateStabilizationUi();
 }
 
 MainWindow::~MainWindow() = default;
@@ -57,16 +64,67 @@ void MainWindow::setupUi()
     tb->addAction(style()->standardIcon(QStyle::SP_MediaStop),
                   tr("Detener"), this, &MainWindow::stop);
 
-    auto* central = new QWidget(this);
-    auto* layout = new QVBoxLayout(central);
-    layout->setContentsMargins(4, 4, 4, 4);
+    QToolBar* stabTb = addToolBar(tr("Estabilización"));
+    stabTb->setMovable(false);
 
+    trackerCombo_ = new QComboBox(stabTb);
+    trackerCombo_->addItem(tr("Template"));
+    trackerCombo_->addItem(tr("Centroid"));
+    trackerCombo_->setToolTip(tr("Algoritmo de seguimiento"));
+    stabTb->addWidget(trackerCombo_);
+
+    borderCombo_ = new QComboBox(stabTb);
+    borderCombo_->addItem(tr("Borde negro"));
+    borderCombo_->addItem(tr("Borde réplica"));
+    borderCombo_->setToolTip(tr("Relleno de los bordes al desplazar el frame"));
+    stabTb->addWidget(borderCombo_);
+
+    smoothSpin_ = new QDoubleSpinBox(stabTb);
+    smoothSpin_->setRange(0.01, 1.0);
+    smoothSpin_->setSingleStep(0.05);
+    smoothSpin_->setValue(0.3);
+    smoothSpin_->setToolTip(tr("Suavizado (alpha EMA) del centro del objeto"));
+    stabTb->addWidget(smoothSpin_);
+
+    analyzeAction_ = stabTb->addAction(tr("Seguir"), this, &MainWindow::startAnalyze);
+    analyzeAction_->setToolTip(tr("Analizar el vídeo: seguir el objeto y calcular desplazamientos"));
+    previewAction_ = stabTb->addAction(tr("Vista previa"), this, &MainWindow::togglePreview);
+    previewAction_->setCheckable(true);
+    previewAction_->setToolTip(tr("Mostrar los frames estabilizados"));
+    exportAction_ = stabTb->addAction(tr("Exportar..."), this, &MainWindow::startExport);
+    exportAction_->setToolTip(tr("Estabilizar y guardar el vídeo de salida"));
+
+    connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { showCurrentFrame(); });
+
+    auto* central = new QWidget(this);
+    auto* root = new QVBoxLayout(central);
+    root->setContentsMargins(4, 4, 4, 4);
+
+    auto* viewers = new QHBoxLayout();
+
+    auto* sourceBox = new QVBoxLayout();
+    auto* srcTitle = new QLabel(tr("Original"), central);
+    srcTitle->setAlignment(Qt::AlignCenter);
+    sourceBox->addWidget(srcTitle);
     view_ = new VideoView(central);
-    layout->addWidget(view_, 1);
+    sourceBox->addWidget(view_, 1);
+
+    auto* resultBox = new QVBoxLayout();
+    auto* resTitle = new QLabel(tr("Estabilizado"), central);
+    resTitle->setAlignment(Qt::AlignCenter);
+    resultBox->addWidget(resTitle);
+    resultView_ = new VideoView(central);
+    resultView_->setRoiEnabled(false);
+    resultBox->addWidget(resultView_, 1);
+
+    viewers->addLayout(sourceBox, 1);
+    viewers->addLayout(resultBox, 1);
+    root->addLayout(viewers, 1);
 
     slider_ = new QSlider(Qt::Horizontal, central);
     slider_->setEnabled(false);
-    layout->addWidget(slider_);
+    root->addWidget(slider_);
 
     auto* bottom = new QHBoxLayout();
     frameLabel_ = new QLabel(tr("Frame: - / -"), central);
@@ -74,9 +132,13 @@ void MainWindow::setupUi()
     timeLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     bottom->addWidget(frameLabel_, 1);
     bottom->addWidget(timeLabel_);
-    layout->addLayout(bottom);
+    root->addLayout(bottom);
 
     setCentralWidget(central);
+
+    progressBar_ = new QProgressBar(this);
+    progressBar_->setVisible(false);
+    statusBar()->addPermanentWidget(progressBar_);
     statusBar()->showMessage(tr("Abrir un vídeo para empezar"));
 
     connect(slider_, &QSlider::valueChanged, this, [this](int ms) {
@@ -108,6 +170,7 @@ void MainWindow::openPath(const QString& path)
         return;
     }
 
+    inPath_ = path;
     reader_ = std::move(reader);
     totalUs_ = reader_->durationUs();
     totalFrames_ = reader_->frameCount();
@@ -115,6 +178,13 @@ void MainWindow::openPath(const QString& path)
         stepUs_ = static_cast<int64_t>(1000000.0 / reader_->fps());
     currentUs_ = 0;
     roi_ = QRect();
+    offsets_.clear();
+    previewEnabled_ = false;
+    previewAction_->setChecked(false);
+    view_->setRoiEnabled(true);
+    view_->clearRoi();
+    startUs_ = 0;
+    startIndex_ = 0;
 
     slider_->setRange(0, static_cast<int>(totalUs_ / 1000));
     slider_->setValue(0);
@@ -122,6 +192,7 @@ void MainWindow::openPath(const QString& path)
     playAction_->setEnabled(true);
 
     showCurrentFrame();
+    updateStabilizationUi();
     statusBar()->showMessage(
         tr("Abierto: %1  (%2x%3, %4 fps, %5 frames)")
             .arg(path)
@@ -138,6 +209,7 @@ void MainWindow::showCurrentFrame()
         return;
     currentUs_ = frame.ptsUs;
     view_->setFrame(frame.image);
+    resultView_->setFrame(displayFrame(frame.image, frame.index));
 
     const int ms = static_cast<int>(currentUs_ / 1000);
     slider_->setValue(ms);
@@ -199,6 +271,7 @@ void MainWindow::onTimer()
     }
     currentUs_ = frame.ptsUs;
     view_->setFrame(frame.image);
+    resultView_->setFrame(displayFrame(frame.image, frame.index));
     slider_->setValue(static_cast<int>(currentUs_ / 1000));
     frameLabel_->setText(tr("Frame: %1 / %2").arg(frame.index).arg(totalFrames_));
     timeLabel_->setText(formatTime(currentUs_));
@@ -207,17 +280,175 @@ void MainWindow::onTimer()
 void MainWindow::onRoiSelected(const QRect& rect)
 {
     roi_ = rect;
+    view_->setRoi(rect);
+    startUs_ = currentUs_;
+    startIndex_ = reader_ ? static_cast<int64_t>(std::llround(currentUs_ * reader_->fps() / 1e6)) : 0;
     statusBar()->showMessage(tr("ROI seleccionada: %1x%2 en (%3,%4)")
                                  .arg(rect.width())
                                  .arg(rect.height())
                                  .arg(rect.x())
                                  .arg(rect.y()),
                              5000);
+    updateStabilizationUi();
+}
+
+void MainWindow::startAnalyze()
+{
+    if (!reader_ || roi_.isEmpty() || worker_)
+        return;
+
+    PipelineWorker::Request req;
+    req.mode = PipelineWorker::Mode::Analyze;
+    req.inPath = inPath_;
+    req.roi = cv::Rect2f(roi_.x(), roi_.y(), roi_.width(), roi_.height());
+    req.settings = currentSettings();
+    req.startUs = startUs_;
+    launchWorker(req);
+}
+
+void MainWindow::togglePreview(bool enabled)
+{
+    if (enabled && offsets_.empty()) {
+        previewAction_->setChecked(false);
+        return;
+    }
+    previewEnabled_ = enabled;
+    view_->setRoiEnabled(!enabled);
+    if (enabled)
+        statusBar()->showMessage(tr("Vista previa: se muestran los frames estabilizados"), 5000);
+    showCurrentFrame();
+}
+
+void MainWindow::startExport()
+{
+    if (!reader_ || roi_.isEmpty() || offsets_.empty() || worker_)
+        return;
+
+    const QString outPath = QFileDialog::getSaveFileName(
+        this, tr("Exportar vídeo estabilizado"), QString(),
+        tr("Vídeo MP4 (*.mp4)"));
+    if (outPath.isEmpty())
+        return;
+
+    PipelineWorker::Request req;
+    req.mode = PipelineWorker::Mode::Export;
+    req.inPath = inPath_;
+    req.outPath = outPath;
+    req.roi = cv::Rect2f(roi_.x(), roi_.y(), roi_.width(), roi_.height());
+    req.settings = currentSettings();
+    req.startUs = startUs_;
+    launchWorker(req);
+}
+
+void MainWindow::launchWorker(const PipelineWorker::Request& req)
+{
+    if (worker_)
+        return;
+
+    worker_ = new PipelineWorker(req, this);
+    connect(worker_, &PipelineWorker::progress, this, &MainWindow::onWorkerProgress);
+    connect(worker_, &PipelineWorker::analyzeFinished, this, &MainWindow::onAnalyzeFinished);
+    connect(worker_, &PipelineWorker::exportFinished, this, &MainWindow::onExportFinished);
+    connect(worker_, &QThread::finished, worker_, &QObject::deleteLater);
+    connect(worker_, &QThread::finished, this, &MainWindow::onWorkerFinished);
+
+    setBusy(true);
+    progressBar_->setRange(0, 100);
+    progressBar_->setValue(0);
+    progressBar_->setVisible(true);
+    worker_->start();
+}
+
+void MainWindow::onWorkerProgress(int done, int total)
+{
+    if (total > 0)
+        progressBar_->setRange(0, total);
+    progressBar_->setValue(done);
+}
+
+void MainWindow::onAnalyzeFinished(bool ok, const QString& error, QVector<QPointF> offsets,
+                                   int frames, int valid, double meanConfidence)
+{
+    Q_UNUSED(error);
+    if (ok && !offsets.isEmpty()) {
+        offsets_.clear();
+        offsets_.reserve(static_cast<size_t>(offsets.size()));
+        for (const QPointF& p : offsets)
+            offsets_.push_back(cv::Point2f(static_cast<float>(p.x()),
+                                           static_cast<float>(p.y())));
+        previewEnabled_ = true;
+        previewAction_->setChecked(true);
+        view_->setRoiEnabled(false);
+        showCurrentFrame();
+        statusBar()->showMessage(
+            tr("Seguimiento: %1 frames, %2 válidos, confianza %3%")
+                .arg(frames)
+                .arg(valid)
+                .arg(meanConfidence * 100.0, 0, 'f', 1));
+    } else {
+        statusBar()->showMessage(tr("No se pudo analizar el vídeo"));
+    }
+    updateStabilizationUi();
+}
+
+void MainWindow::onExportFinished(bool ok, const QString& error, int frames, int valid)
+{
+    if (ok)
+        statusBar()->showMessage(
+            tr("Exportado: %1 (%2 frames, %3 válidos)").arg(inPath_).arg(frames).arg(valid));
+    else
+        statusBar()->showMessage(tr("Error al exportar: %1").arg(error));
+}
+
+void MainWindow::onWorkerFinished()
+{
+    worker_ = nullptr;
+    setBusy(false);
+    progressBar_->setVisible(false);
+    updateStabilizationUi();
+}
+
+void MainWindow::updateStabilizationUi()
+{
+    const bool canTrack = reader_ != nullptr && !roi_.isEmpty() && worker_ == nullptr;
+    analyzeAction_->setEnabled(canTrack);
+    exportAction_->setEnabled(canTrack && !offsets_.empty());
+    previewAction_->setEnabled(!offsets_.empty());
+}
+
+void MainWindow::setBusy(bool busy)
+{
+    analyzeAction_->setEnabled(!busy);
+    exportAction_->setEnabled(!busy);
+    previewAction_->setEnabled(!busy);
+    playAction_->setEnabled(!busy && reader_);
 }
 
 void MainWindow::updateTransportUi()
 {
     // no-op por ahora
+}
+
+PipelineSettings MainWindow::currentSettings() const
+{
+    PipelineSettings s;
+    s.tracker = (trackerCombo_->currentIndex() == 1) ? TrackerType::Centroid
+                                                     : TrackerType::Template;
+    s.searchFactor = 2.5f;
+    s.smoothingAlpha = static_cast<float>(smoothSpin_->value());
+    s.borderMode = (borderCombo_->currentIndex() == 1) ? BorderMode::Replicate
+                                                       : BorderMode::Black;
+    return s;
+}
+
+cv::Mat MainWindow::displayFrame(const cv::Mat& src, int64_t frameIndex) const
+{
+    if (!previewEnabled_ || offsets_.empty())
+        return src;
+    const int64_t oi = frameIndex - startIndex_;
+    if (oi < 0 || oi >= static_cast<int64_t>(offsets_.size()))
+        return src;
+    return FrameTransformer(currentSettings().borderMode).transform(src, offsets_[oi]);
 }
 
 QString MainWindow::formatTime(int64_t us) const

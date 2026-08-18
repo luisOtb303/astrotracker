@@ -80,7 +80,8 @@ necesario añadir rutas al `PATH` para ejecutar la app.
 
 Para abrir un vídeo al arrancar: `astrotracker.exe ruta\al\video.mp4`
 
-Para generar el vídeo de prueba: `ffmpeg -f lavfi -i "color=c=black:s=640x480:r=25:d=8,drawbox=x='mod(t*50,600)':y=120:w=60:h=60:color=white:t=fill" -c:v libx264 testdata/moon.mp4`
+Para generar el vídeo de prueba (disco brillante que se desplaza 4 px/frame):
+`ffmpeg -f lavfi -i "color=c=black:s=640x480:r=25:d=10,geq=lum='if(lt((X-(80+mod(N*4,240)))*(X-(80+mod(N*4,240)))+(Y-240)*(Y-240),900),255,0)':cb=128:cr=128" -c:v libx264 -pix_fmt yuv420p testdata/moon.mp4`
 
 ## Estructura
 
@@ -118,12 +119,12 @@ compatibles: FFmpeg (GPL), Qt (LGPLv3/GPLv3), OpenCV (Apache-2.0), vid.stab
 
 ## Estado
 
-En desarrollo (Fase 4). Completado: visor de vídeo (abrir/reproducir/frame a
-frame/ROI), núcleo de tracking (TemplateTracker, CentroidTracker, Kalman,
-MotionModel con estados VALID/UNCERTAIN/LOST), estabilización por traslación
-(Fase 3) y pipeline de dos pasadas con exportación FFmpeg (Fase 4: `Pipeline`
-analiza → suaviza → aplica → codifica, sin descartar frames). Pendiente:
-preview de parámetros y exportación desde la UI (Fase 5).
+En desarrollo (Fase 5). Completado: visor de vídeo, núcleo de tracking,
+estabilización por traslación (Fase 3), pipeline de dos pasadas con exportación
+FFmpeg (Fase 4) y estabilización desde la UI (Fase 5): dos visores lado a lado
+(original / estabilizado), parámetros del pipeline en la toolbar, análisis y
+exportación en hilo separado con barra de progreso. Pendiente: overlay de
+tracking sobre el vídeo y ajustes finos de UI.
 
 No está en el MVP: plate solving, astronomía, IA, reconocimiento de Sol/Luna, RAW,
 stacking, wavelets, deconvolution ni calidad planetaria.
