@@ -1,6 +1,6 @@
 #include "stabilization/Stabilizer.h"
 
-#include <opencv2/imgproc.hpp>
+#include "processing/BorderHandler.h"
 
 Stabilizer::Stabilizer()
     : smoother_(0.3f)
@@ -23,9 +23,5 @@ cv::Point2f Stabilizer::update(const cv::Point2f& objectCenter)
 
 cv::Mat Stabilizer::apply(const cv::Mat& frame, const cv::Point2f& offset)
 {
-    cv::Mat out;
-    const cv::Mat M = (cv::Mat_<double>(2, 3) << 1.0, 0.0, offset.x,
-                       0.0, 1.0, offset.y);
-    cv::warpAffine(frame, out, M, frame.size());
-    return out;
+    return BorderHandler::apply(frame, offset, BorderMode::Black);
 }

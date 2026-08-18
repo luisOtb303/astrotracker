@@ -118,11 +118,12 @@ compatibles: FFmpeg (GPL), Qt (LGPLv3/GPLv3), OpenCV (Apache-2.0), vid.stab
 
 ## Estado
 
-En desarrollo (Fase 1/2). Completado: visor de vídeo (abrir/reproducir/frame a
-frame/ROI) y núcleo de tracking (TemplateTracker, CentroidTracker, Kalman,
-MotionModel con estados VALID/UNCERTAIN/LOST). Pendiente: estabilización por
-traslación (Fase 3), pipeline de dos pasadas y exportación (Fase 4), preview de
-parámetros (Fase 5).
+En desarrollo (Fase 4). Completado: visor de vídeo (abrir/reproducir/frame a
+frame/ROI), núcleo de tracking (TemplateTracker, CentroidTracker, Kalman,
+MotionModel con estados VALID/UNCERTAIN/LOST), estabilización por traslación
+(Fase 3) y pipeline de dos pasadas con exportación FFmpeg (Fase 4: `Pipeline`
+analiza → suaviza → aplica → codifica, sin descartar frames). Pendiente:
+preview de parámetros y exportación desde la UI (Fase 5).
 
 No está en el MVP: plate solving, astronomía, IA, reconocimiento de Sol/Luna, RAW,
 stacking, wavelets, deconvolution ni calidad planetaria.

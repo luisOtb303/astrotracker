@@ -37,6 +37,16 @@ add_executable(astrotracker
   src/stabilization/SmoothingFilter.cpp
   src/stabilization/Stabilizer.h
   src/stabilization/Stabilizer.cpp
+  src/video/IVideoWriter.h
+  src/video/FFmpegVideoWriter.h
+  src/video/FFmpegVideoWriter.cpp
+  src/processing/BorderHandler.h
+  src/processing/BorderHandler.cpp
+  src/processing/FrameTransformer.h
+  src/processing/Pipeline.h
+  src/processing/Pipeline.cpp
+  src/export/ExportJob.h
+  src/export/ExportJob.cpp
 )
 
 target_include_directories(astrotracker PRIVATE src)

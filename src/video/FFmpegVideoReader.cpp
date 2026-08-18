@@ -88,6 +88,7 @@ bool FFmpegVideoReader::open(const std::string& path)
         return false;
     if (avcodec_parameters_to_context(d->codec, d->stream->codecpar) < 0)
         return false;
+    d->codec->thread_count = 1; // mono-hilo: evita contenido obsoleto por frame-threading
     if (avcodec_open2(d->codec, dec, nullptr) < 0)
         return false;
 

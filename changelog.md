@@ -65,3 +65,40 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
     `VALID / UNCERTAIN / LOST` con `consecutiveMisses`.
   - `tests/test_motion` y `tests/test_trackers` (CTest): convergencia de
     Kalman, transiciones de estado y seguimiento sobre frames sintéticos.
+
+### Added
+
+- Fase 4 — Pipeline de dos pasadas y exportación:
+  - `IVideoWriter`: interfaz de escritura de vídeo (open/write/close).
+  - `FFmpegVideoWriter` (libav/libx264): codifica BGR8 → H.264/MP4 con PTS
+    monotónicos por índice de paquete y duración explícita por frame
+    (`pkt->duration = 1`), sin B-frames y sin threading para latencia mínima.
+  - `BorderHandler`: aplicación de `warpAffine` con borde negro o réplica.
+  - `FrameTransformer`: traslación de un frame respetando el modo de borde.
+  - `Pipeline::analyze` (primera pasada): seguimiento + suavizado + offsets.
+  - `Pipeline::run` (segunda pasada): re-lectura del vídeo de entrada,
+    transformación frame a frame y escritura de la salida, sin descartar
+    ningún frame.
+  - `ExportJob` (esqueleto): tarea de exportación para el hilo de UI.
+  - `tests/test_writer` (CTest): 30 frames ida y vuelta (writer → reader) con
+    contenido verificado.
+  - `tests/test_pipeline` (CTest): vídeo sintético de 40 frames, tracking
+    válido en todos, salida con 40 frames y objeto centrado (≤5 px).
+
+### Fixed
+
+- `FFmpegVideoWriter`: el último frame se perdía (30 paquetes en el contenedor,
+  solo 29 decodificables): los paquetes salían con `duration = 0` y el muxer MP4
+  escribía la duración del track igual al último PTS, marcando la última muestra
+  como descartable. Se fija `pkt->duration = 1` en cada paquete emitido.
+- `FFmpegVideoWriter`: los frames encolados se liberaban antes de que el encoder
+  terminara de consumirlos; ahora se conservan en una cola FIFO hasta que se
+  emite el paquete correspondiente.
+- `FFmpegVideoReader`: se fuerza decodificación mono-hilo (`thread_count = 1`)
+  para evitar que el frame-threading devuelva contenido obsoleto.
+- `tests/test_writer` y `tests/test_pipeline`: los centroides se calculaban
+  sobre toda la imagen (el fondo gris de 20/255 sesgaba el resultado hacia el
+  centro del frame); ahora se umbraliza antes de `cv::moments`.
+- `tests/test_pipeline`: la ROI de prueba no estaba centrada en el disco y la
+  velocidad (9,4 px/frame) producía un lag de suavizado que excedía la
+  tolerancia; se centra la ROI en el disco y se usa una deriva lenta realista.
