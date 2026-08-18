@@ -1,0 +1,9 @@
+build/
+.vs/
+*.user
+*.suo
+CMakeUserPresets.json
+cmake-build-*/
+out/
+bin/
+*.log
