@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-// Lee una secuencia de fotos estáticas (JPG/PNG/TIFF/BMP; las CR2/CR3 se
-// añaden en la Fase 6). El orden de trabajo es el de los nombres de archivo
-// ordenados naturalmente (IMG_2, IMG_10 en lugar de IMG_10, IMG_2).
+// Lee una secuencia de fotos estáticas (JPG/PNG/TIFF/BMP y RAW CR2/CR3 vía
+// LibRaw). El orden de trabajo es el de los nombres de archivo ordenados
+// naturalmente (IMG_2, IMG_10 en lugar de IMG_10, IMG_2).
 // Cada foto se decodifica bajo demanda; no se retiene nada en memoria.
 class PhotoSequenceReader
 {
@@ -28,8 +28,11 @@ public:
     bool readAt(int64_t idx, cv::Mat& out, int maxDim = 0) const;
 
     // Decodificación sin normalizar (cualquier profundidad/canales), para
-    // exportación a máxima calidad.
+    // exportación a máxima calidad. Los RAW se devuelven a 16 bits.
     bool readFullRes(int64_t idx, cv::Mat& out) const;
+
+    // Miniatura rápida para filmstrips (RAW: miniatura embebida del archivo).
+    bool thumbnail(int64_t idx, cv::Mat& out, int maxDim = 0) const;
 
     std::string fileName(int64_t idx) const;
     std::string filePath(int64_t idx) const;
@@ -38,6 +41,7 @@ public:
 
 private:
     static bool isSupported(const std::string& path);
+    static bool isRawExt(const std::string& path);
     static std::string baseName(const std::string& path);
     static int compareNatural(const std::string& a, const std::string& b);
     bool probeSize();

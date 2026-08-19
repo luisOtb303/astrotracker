@@ -31,9 +31,10 @@ pero resolviendo un problema que PIPP no cubre bien.
   rango de frames para experimentar rápido.
 - **Visual debugging**: bounding box, centro detectado, trayectoria, confidence y
   estado de tracking superpuestos sobre el vídeo.
-- **Modo "Fotos"**: abre una secuencia de fotos (JPG/PNG/TIFF/BMP; CR2/CR3 en
-  camino vía LibRaw) en una pestaña con filmstrip de miniaturas y dos visores, y
-  la centrará sobre el objeto foto a foto (en curso).
+- **Modo "Fotos"**: abre una secuencia de fotos (JPG/PNG/TIFF/BMP y
+  **RAW CR2/CR3, DNG, NEF, ARW… vía LibRaw**) en una pestaña con filmstrip de
+  miniaturas (usa la miniatura embebida del RAW) y dos visores, y la centrará
+  sobre el objeto foto a foto (en curso).
 
 ## Uso (flujo típico)
 
@@ -58,6 +59,7 @@ Open video → Select object → Track → Preview → Stabilize → Export
 | OpenCV | 4.x | prebuilt de opencv.org |
 | FFmpeg/libav | dev-package (gyan.dev) | build GPL con libx264 |
 | vid.stab | 1.1.x (fuente) | terceros, módulo opcional de estabilización global |
+| LibRaw | 0.22.x (fuente en `third_party/libraw`) | decodificación RAW (CR2/CR3, DNG, NEF…) |
 | CMake | 3.21+ | incluido con VS |
 
 La aplicación integra **FFmpeg como librería** (libavformat/libavcodec/libswscale);
@@ -93,7 +95,8 @@ src/
   app/          main, Application
   ui/           MainWindow (pestañas Vídeo|Fotos), VideoView, PhotoPanel, paneles
   video/        IVideoReader/IVideoWriter, FFmpegVideoReader/Writer, SERReader/Writer
-  stills/       PhotoSequenceReader (secuencias de fotos; RAW próximamente)
+  stills/       PhotoSequenceReader (secuencias de fotos; RAW vía LibRaw)
+  raw/          RawDecoder (LibRaw: CR2/CR3, DNG, NEF, ARW…)
   tracking/     ITracker, TemplateTracker, CentroidTracker, OpticalFlowTracker, HybridTracker
   motion/       MotionModel, Kalman, TrackStatus (VALID/UNCERTAIN/LOST)
   stabilization/ Stabilizer, TargetPosition, SmoothingFilter
@@ -125,13 +128,13 @@ compatibles: FFmpeg (GPL), Qt (LGPLv3/GPLv3), OpenCV (Apache-2.0), vid.stab
 
 En desarrollo (Fase 6). Completado: visor de vídeo, núcleo de tracking,
 estabilización por traslación (Fase 3), pipeline de dos pasadas con exportación
-FFmpeg (Fase 4), estabilización desde la UI (Fase 5) y el modo "Fotos" (Fase 6): 
+FFmpeg (Fase 4), estabilización desde la UI (Fase 5) y el modo "Fotos" (Fase 6):
 pestaña separada con filmstrip de miniaturas, dos visores (original / centrado),
 navegación y apertura por carpeta o multi-selección, con lectura de
-JPG/PNG/TIFF/BMP y orden natural. Pendiente en Fase 6: lectura RAW
-(CR2/CR3 vía LibRaw), seguimiento por círculo-máscara con predicción,
-correcciones manuales arrastrando el círculo y exportación de la secuencia
-centrada (fotos y/o MP4).
+JPG/PNG/TIFF/BMP y RAW (**CR2/CR3 y demás formatos de LibRaw**, 8/16-bit,
+vendido en `third_party/libraw`). Pendiente en Fase 6: seguimiento por
+círculo-máscara con predicción, correcciones manuales arrastrando el círculo y
+exportación de la secuencia centrada (fotos y/o MP4).
 
 No está fuera del alcance actual: tratamiento de exposición/curvas tipo
 darktable/lightroom (fase posterior).

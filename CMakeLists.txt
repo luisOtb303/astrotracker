@@ -11,6 +11,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil swscale)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED)
+add_subdirectory(third_party/libraw)
 
 add_executable(astrotracker
   src/app/main.cpp
@@ -50,6 +51,8 @@ add_executable(astrotracker
   src/export/PipelineWorker.h
   src/stills/PhotoSequenceReader.h
   src/stills/PhotoSequenceReader.cpp
+  src/raw/RawDecoder.h
+  src/raw/RawDecoder.cpp
   src/ui/PhotoPanel.h
   src/ui/PhotoPanel.cpp
 )
@@ -60,6 +63,7 @@ target_compile_definitions(astrotracker PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(astrotracker PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets
   ${OpenCV_LIBS}
+  libraw
   FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale
 )
 

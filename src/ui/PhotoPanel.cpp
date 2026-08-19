@@ -118,7 +118,9 @@ void PhotoPanel::openImagesDialog()
 {
     const QStringList paths = QFileDialog::getOpenFileNames(
         this, tr("Seleccionar fotos (secuencia)"), QString(),
-        tr("Imágenes (*.jpg *.jpeg *.png *.tif *.tiff *.bmp);;Todos los archivos (*.*)"));
+        tr("Imágenes (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.cr2 *.cr3 *.dng *.nef);;"
+           "RAW (*.cr2 *.cr3 *.dng *.nef *.arw *.orf *.raf *.rw2 *.pef *.srw *.raw);;"
+           "Todos los archivos (*.*)"));
     if (paths.isEmpty())
         return;
     openPaths(paths);
@@ -202,7 +204,7 @@ void PhotoPanel::buildFilmstrip()
 
     for (int64_t i = 0; i < reader_.count(); ++i) {
         cv::Mat thumb;
-        if (!reader_.readAt(i, thumb, thumbMaxDim_))
+        if (!reader_.thumbnail(i, thumb, thumbMaxDim_))
             continue;
         auto* item = new QListWidgetItem(QIcon(matToPixmap(thumb)), QString());
         item->setToolTip(QString::fromStdString(reader_.fileName(i)));

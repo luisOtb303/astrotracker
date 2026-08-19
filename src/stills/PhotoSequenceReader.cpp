@@ -1,5 +1,7 @@
 #include "stills/PhotoSequenceReader.h"
 
+#include "raw/RawDecoder.h"
+
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
@@ -16,8 +18,15 @@ bool PhotoSequenceReader::open(const std::vector<std::string>& paths)
     height_ = 0;
 
     for (const auto& p : paths) {
-        if (isSupported(p))
+        if (!isSupported(p))
+            continue;
+        if (isRawExt(p)) {
+            // Valida el RAW sin decodificarlo (solo cabecera).
+            if (RawDecoder::isRawFile(p))
+                paths_.push_back(p);
+        } else {
             paths_.push_back(p);
+        }
     }
 
     std::sort(paths_.begin(), paths_.end(), [](const std::string& a, const std::string& b) {
@@ -90,8 +99,21 @@ bool PhotoSequenceReader::readFullRes(int64_t idx, cv::Mat& out) const
 {
     if (idx < 0 || idx >= count())
         return false;
-    out = cv::imread(paths_[static_cast<size_t>(idx)], cv::IMREAD_UNCHANGED);
+    const std::string& path = paths_[static_cast<size_t>(idx)];
+    if (isRawExt(path))
+        return RawDecoder::decode(path, out, true);
+    out = cv::imread(path, cv::IMREAD_UNCHANGED);
     return !out.empty();
+}
+
+bool PhotoSequenceReader::thumbnail(int64_t idx, cv::Mat& out, int maxDim) const
+{
+    if (idx < 0 || idx >= count())
+        return false;
+    const std::string& path = paths_[static_cast<size_t>(idx)];
+    if (isRawExt(path))
+        return RawDecoder::thumbnail(path, out, maxDim);
+    return readAt(idx, out, maxDim);
 }
 
 std::string PhotoSequenceReader::fileName(int64_t idx) const
@@ -110,11 +132,16 @@ std::string PhotoSequenceReader::filePath(int64_t idx) const
 
 bool PhotoSequenceReader::probeSize()
 {
-    cv::Mat first;
-    if (!readFullRes(0, first))
+    if (paths_.empty())
         return false;
-    width_ = first.cols;
-    height_ = first.rows;
+    const std::string& first = paths_.front();
+    if (isRawExt(first))
+        return RawDecoder::dimensions(first, width_, height_);
+    cv::Mat firstImg;
+    if (!readFullRes(0, firstImg))
+        return false;
+    width_ = firstImg.cols;
+    height_ = firstImg.rows;
     return true;
 }
 
@@ -129,7 +156,21 @@ bool PhotoSequenceReader::isSupported(const std::string& path)
     std::string ext = p.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return kExt.count(ext) != 0;
+    return kExt.count(ext) != 0 || isRawExt(path);
+}
+
+bool PhotoSequenceReader::isRawExt(const std::string& path)
+{
+    static const std::set<std::string> kRawExt = {
+        ".cr2", ".cr3", ".dng", ".nef", ".arw", ".orf", ".raf", ".rw2", ".pef", ".srw", ".raw"
+    };
+    const fs::path p(path);
+    if (p.extension().empty())
+        return false;
+    std::string ext = p.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return kRawExt.count(ext) != 0;
 }
 
 std::string PhotoSequenceReader::baseName(const std::string& path)

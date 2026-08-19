@@ -9,6 +9,21 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Added
 
+- Fase 6 — Soporte RAW en el modo "Fotos" (M2):
+  - **LibRaw 0.22.2 vendido en `third_party/libraw`** (LGPL-2.1/CDDL) con wrapper
+    CMake propio que compila la librería estática en Windows/MSVC (defines
+    `LIBRAW_BUILDLIB` públicos para evitar `__declspec(dllimport)`).
+  - `raw/RawDecoder`: reconocimiento de cabecera (`isRawFile`), dimensiones,
+    **decodificación 8-bit (BGR8, mapeo de tono) y 16-bit (CV_16UC3 sin
+    comprimir**, para exportación) con `half_size` y `maxDim`, y miniatura
+    embebida (JPEG/BITMAP) para filmstrips.
+  - `stills/PhotoSequenceReader` acepta **CR2/CR3/DNG/NEF/ARW/ORF/RAF/RW2/PEF/SRW/
+    RAW**: las miniaturas del filmstrip usan la miniatura embebida del RAW y
+    `readFullRes` decodifica a 16-bit; `probeSize` lee dimensiones de cabecera.
+  - `ui/PhotoPanel`: el diálogo de apertura ahora acepta los formatos RAW.
+  - `tests/test_raw` (CTest): smoke test con **RAW reales CC0
+    (`testdata/raw/`): Canon 40D sRAW2 (.CR2) y Canon R6 (.CR3)** — verifica
+    cabecera, dimensiones, thumbnail y decode 8/16-bit.
 - Fase 6 — Modo "Fotos" (centrado de secuencias de fotos; M1):
   - `stills/PhotoSequenceReader`: lee una secuencia de fotos
     (JPG/PNG/TIFF/BMP) por carpeta o lista, con **orden natural de nombres**

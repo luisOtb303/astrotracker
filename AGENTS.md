@@ -49,7 +49,8 @@ src/
   app/          main, Application
   ui/           MainWindow (pestañas Vídeo|Fotos), VideoView, PhotoPanel, paneles
   video/        IVideoReader/IVideoWriter, FFmpegVideoReader/Writer, SERReader/Writer
-  stills/       PhotoSequenceReader (secuencias de fotos; RAW con LibRaw en curso)
+  stills/       PhotoSequenceReader (secuencias de fotos; RAW con LibRaw)
+  raw/          RawDecoder (LibRaw: CR2/CR3, DNG, NEF, ARW…) *
   tracking/     ITracker, TemplateTracker, CentroidTracker, OpticalFlowTracker, HybridTracker
   motion/       MotionModel, Kalman, TrackStatus (VALID/UNCERTAIN/LOST)
   stabilization/ Stabilizer, TargetPosition, SmoothingFilter
@@ -59,7 +60,7 @@ src/
 tests/          tests unitarios (CTest)
 research/       scripts Python de prototipo/benchmark (no runtime de la app)
 docs/           research.md, ARCHITECTURE.md, licencias
-third_party/    dependencias fuente (ej. vid.stab, próximamente libraw)
+third_party/    dependencias fuente (vid.stab; libraw, vendido en-tree)
 resources/      iconos, estilos
 ```
 

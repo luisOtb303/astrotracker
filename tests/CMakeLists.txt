@@ -137,14 +137,41 @@ else()
 endif()
 add_test(NAME test_pipeline COMMAND test_pipeline ${PIPE_IN} ${PIPE_OUT})
 
-# Test del lector de secuencias de fotos (orden natural, formatos, tamaños).
+# Test del lector de secuencias de fotos (orden natural, formatos, RAW vía LibRaw).
 
 add_executable(test_stills test_stills/main.cpp
   ../src/stills/PhotoSequenceReader.h
-  ../src/stills/PhotoSequenceReader.cpp)
+  ../src/stills/PhotoSequenceReader.cpp
+  ../src/raw/RawDecoder.h
+  ../src/raw/RawDecoder.cpp)
 
 target_include_directories(test_stills PRIVATE ../src)
 target_compile_definitions(test_stills PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(test_stills PRIVATE ${OpenCV_LIBS})
+target_link_libraries(test_stills PRIVATE ${OpenCV_LIBS} libraw)
 
 add_test(NAME test_stills COMMAND test_stills)
+
+# Smoke test de decodificación RAW real (CR2 y CR3 vía LibRaw).
+
+add_executable(test_raw test_raw/main.cpp
+  ../src/raw/RawDecoder.h
+  ../src/raw/RawDecoder.cpp)
+
+target_include_directories(test_raw PRIVATE ../src)
+target_compile_definitions(test_raw PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_raw PRIVATE ${OpenCV_LIBS} libraw)
+
+set(RAW_SAMPLES
+  ${CMAKE_SOURCE_DIR}/testdata/raw/canon_40d_sraw2.CR2
+  ${CMAKE_SOURCE_DIR}/testdata/raw/canon_r6.CR3)
+
+set(_samples_verified TRUE)
+foreach(_s IN LISTS RAW_SAMPLES)
+  if(NOT EXISTS ${_s})
+    set(_samples_verified FALSE)
+  endif()
+endforeach()
+
+if(_samples_verified)
+  add_test(NAME test_raw COMMAND test_raw ${RAW_SAMPLES})
+endif()
