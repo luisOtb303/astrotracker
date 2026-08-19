@@ -13,7 +13,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED)
 add_subdirectory(third_party/libraw)
 
-add_executable(astrotracker
+add_executable(astrotracker WIN32
   src/app/main.cpp
   src/common/Frame.h
   src/common/CircleF.h

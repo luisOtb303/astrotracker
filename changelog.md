@@ -9,6 +9,10 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Changed
 
+- **La app ya no abre la ventana negra de consola**: el ejecutable se vincula
+  como GUI Windows (`add_executable(... WIN32)`), que es lo correcto para una
+  aplicación Qt; antes quedaba como consola y Windows abría un `cmd` además de
+  la ventana.
 - **La app recuerda la última carpeta y mantiene "Recientes"**: los diálogos de
   apertura (vídeo y fotos) vuelven a abrir en la última carpeta usada, y el menú
   Archivo → *Recientes* lista los últimos vídeos abiertos y las últimas carpetas
