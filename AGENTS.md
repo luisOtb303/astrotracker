@@ -47,8 +47,9 @@ Entorno objetivo: Windows, Visual Studio 2022 Build Tools, CMake, Ninja.
 ```
 src/
   app/          main, Application
-  ui/           MainWindow, VideoView, paneles, OverlayPainter
+  ui/           MainWindow (pestañas Vídeo|Fotos), VideoView, PhotoPanel, paneles
   video/        IVideoReader/IVideoWriter, FFmpegVideoReader/Writer, SERReader/Writer
+  stills/       PhotoSequenceReader (secuencias de fotos; RAW con LibRaw en curso)
   tracking/     ITracker, TemplateTracker, CentroidTracker, OpticalFlowTracker, HybridTracker
   motion/       MotionModel, Kalman, TrackStatus (VALID/UNCERTAIN/LOST)
   stabilization/ Stabilizer, TargetPosition, SmoothingFilter
@@ -58,7 +59,7 @@ src/
 tests/          tests unitarios (CTest)
 research/       scripts Python de prototipo/benchmark (no runtime de la app)
 docs/           research.md, ARCHITECTURE.md, licencias
-third_party/    dependencias fuente (ej. vid.stab)
+third_party/    dependencias fuente (ej. vid.stab, próximamente libraw)
 resources/      iconos, estilos
 ```
 

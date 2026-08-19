@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 
+#include "ui/PhotoPanel.h"
 #include "ui/VideoView.h"
 #include "video/IVideoReader.h"
 #include "video/FFmpegVideoReader.h"
@@ -18,6 +19,7 @@
 #include <QSlider>
 #include <QStatusBar>
 #include <QStyle>
+#include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -46,6 +48,7 @@ void MainWindow::setupUi()
     QMenu* fileMenu = menuBar()->addMenu(tr("&Archivo"));
     QAction* openAction = fileMenu->addAction(tr("&Abrir vídeo..."), this,
                                               &MainWindow::openFile, QKeySequence::Open);
+    fileMenu->addAction(tr("Abrir &fotos (secuencia)..."), this, &MainWindow::openPhotos);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Salir"), this, &QWidget::close);
 
@@ -97,6 +100,27 @@ void MainWindow::setupUi()
     connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { showCurrentFrame(); });
 
+    tabs_ = new QTabWidget(this);
+    tabs_->addTab(createVideoPage(), tr("Vídeo"));
+    photosPanel_ = new PhotoPanel(this);
+    tabs_->addTab(photosPanel_, tr("Fotos"));
+    setCentralWidget(tabs_);
+
+    progressBar_ = new QProgressBar(this);
+    progressBar_->setVisible(false);
+    statusBar()->addPermanentWidget(progressBar_);
+    statusBar()->showMessage(tr("Abrir un vídeo o una secuencia de fotos para empezar"));
+
+    connect(slider_, &QSlider::valueChanged, this, [this](int ms) {
+        if (!reader_ || ms == currentUs_ / 1000)
+            return;
+        reader_->seekToUs(static_cast<int64_t>(ms) * 1000);
+        showCurrentFrame();
+    });
+}
+
+QWidget* MainWindow::createVideoPage()
+{
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout(central);
     root->setContentsMargins(4, 4, 4, 4);
@@ -134,19 +158,13 @@ void MainWindow::setupUi()
     bottom->addWidget(timeLabel_);
     root->addLayout(bottom);
 
-    setCentralWidget(central);
+    return central;
+}
 
-    progressBar_ = new QProgressBar(this);
-    progressBar_->setVisible(false);
-    statusBar()->addPermanentWidget(progressBar_);
-    statusBar()->showMessage(tr("Abrir un vídeo para empezar"));
-
-    connect(slider_, &QSlider::valueChanged, this, [this](int ms) {
-        if (!reader_ || ms == currentUs_ / 1000)
-            return;
-        reader_->seekToUs(static_cast<int64_t>(ms) * 1000);
-        showCurrentFrame();
-    });
+void MainWindow::openPhotos()
+{
+    tabs_->setCurrentWidget(photosPanel_);
+    photosPanel_->openImagesDialog();
 }
 
 void MainWindow::openFile()

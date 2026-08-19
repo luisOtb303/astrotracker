@@ -136,3 +136,15 @@ else()
   set(PIPE_OUT "${CMAKE_BINARY_DIR}/test_out.mp4")
 endif()
 add_test(NAME test_pipeline COMMAND test_pipeline ${PIPE_IN} ${PIPE_OUT})
+
+# Test del lector de secuencias de fotos (orden natural, formatos, tamaños).
+
+add_executable(test_stills test_stills/main.cpp
+  ../src/stills/PhotoSequenceReader.h
+  ../src/stills/PhotoSequenceReader.cpp)
+
+target_include_directories(test_stills PRIVATE ../src)
+target_compile_definitions(test_stills PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_stills PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_stills COMMAND test_stills)

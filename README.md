@@ -31,6 +31,9 @@ pero resolviendo un problema que PIPP no cubre bien.
   rango de frames para experimentar rápido.
 - **Visual debugging**: bounding box, centro detectado, trayectoria, confidence y
   estado de tracking superpuestos sobre el vídeo.
+- **Modo "Fotos"**: abre una secuencia de fotos (JPG/PNG/TIFF/BMP; CR2/CR3 en
+  camino vía LibRaw) en una pestaña con filmstrip de miniaturas y dos visores, y
+  la centrará sobre el objeto foto a foto (en curso).
 
 ## Uso (flujo típico)
 
@@ -88,8 +91,9 @@ Para generar el vídeo de prueba (disco brillante que se desplaza 4 px/frame):
 ```
 src/
   app/          main, Application
-  ui/           MainWindow, VideoView, paneles, OverlayPainter
+  ui/           MainWindow (pestañas Vídeo|Fotos), VideoView, PhotoPanel, paneles
   video/        IVideoReader/IVideoWriter, FFmpegVideoReader/Writer, SERReader/Writer
+  stills/       PhotoSequenceReader (secuencias de fotos; RAW próximamente)
   tracking/     ITracker, TemplateTracker, CentroidTracker, OpticalFlowTracker, HybridTracker
   motion/       MotionModel, Kalman, TrackStatus (VALID/UNCERTAIN/LOST)
   stabilization/ Stabilizer, TargetPosition, SmoothingFilter
@@ -119,12 +123,18 @@ compatibles: FFmpeg (GPL), Qt (LGPLv3/GPLv3), OpenCV (Apache-2.0), vid.stab
 
 ## Estado
 
-En desarrollo (Fase 5). Completado: visor de vídeo, núcleo de tracking,
+En desarrollo (Fase 6). Completado: visor de vídeo, núcleo de tracking,
 estabilización por traslación (Fase 3), pipeline de dos pasadas con exportación
-FFmpeg (Fase 4) y estabilización desde la UI (Fase 5): dos visores lado a lado
-(original / estabilizado), parámetros del pipeline en la toolbar, análisis y
-exportación en hilo separado con barra de progreso. Pendiente: overlay de
-tracking sobre el vídeo y ajustes finos de UI.
+FFmpeg (Fase 4), estabilización desde la UI (Fase 5) y el modo "Fotos" (Fase 6): 
+pestaña separada con filmstrip de miniaturas, dos visores (original / centrado),
+navegación y apertura por carpeta o multi-selección, con lectura de
+JPG/PNG/TIFF/BMP y orden natural. Pendiente en Fase 6: lectura RAW
+(CR2/CR3 vía LibRaw), seguimiento por círculo-máscara con predicción,
+correcciones manuales arrastrando el círculo y exportación de la secuencia
+centrada (fotos y/o MP4).
 
-No está en el MVP: plate solving, astronomía, IA, reconocimiento de Sol/Luna, RAW,
-stacking, wavelets, deconvolution ni calidad planetaria.
+No está fuera del alcance actual: tratamiento de exposición/curvas tipo
+darktable/lightroom (fase posterior).
+
+No está en el MVP: plate solving, astronomía, IA, stacking, wavelets,
+deconvolution ni calidad planetaria.

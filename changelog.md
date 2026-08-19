@@ -9,6 +9,24 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Added
 
+- Fase 6 — Modo "Fotos" (centrado de secuencias de fotos; M1):
+  - `stills/PhotoSequenceReader`: lee una secuencia de fotos
+    (JPG/PNG/TIFF/BMP) por carpeta o lista, con **orden natural de nombres**
+    (IMG_2 antes que IMG_10), decodificación bajo demanda, `readAt` con
+    redimensión para vista previa/análisis (normaliza 16-bit → BGR8) y
+    `readFullRes` para exportación sin tocar la imagen.
+  - `ui/PhotoPanel`: pestaña "Fotos" con **filmstrip de miniaturas**, dos
+    visores (Original | Centrado), slider y navegación foto a foto; acciones
+    "Abrir carpeta" y "Abrir fotos...".
+  - `MainWindow`: central con pestañas **Vídeo | Fotos** (el modo vídeo queda
+    intacto) y acción de menú "Abrir fotos (secuencia)...".
+  - `tests/test_stills` (CTest): orden natural, descarte de archivos no
+    soportados, geometría, normalización 16-bit, maxDim y `readFullRes`.
+  - `testdata/photos/`: secuencia de ejemplo (10 fotos con el disco móvil,
+    extraídas de `moon.mp4`).
+
+### Added
+
 - Inicialización del repositorio: `AGENTS.md` (decisiones técnicas y comandos de
   build/test), `README.md`, `changelog.md`, `.gitignore`, CMakeLists raíz.
 - `docs/research.md`: investigación (PIPP, vid.stab, OpenCV, FFmpeg, SER Player,

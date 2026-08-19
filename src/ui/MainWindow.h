@@ -9,12 +9,14 @@
 #include <vector>
 
 class VideoView;
+class PhotoPanel;
 class IVideoReader;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QProgressBar;
 class QSlider;
+class QTabWidget;
 class QTimer;
 class QAction;
 
@@ -49,6 +51,8 @@ private slots:
 
 private:
     void setupUi();
+    QWidget* createVideoPage();
+    void openPhotos();
     void showCurrentFrame();
     void updateTransportUi();
     void updateStabilizationUi();
@@ -60,6 +64,8 @@ private:
 
     VideoView* view_ = nullptr;
     VideoView* resultView_ = nullptr;
+    PhotoPanel* photosPanel_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
     QLabel* frameLabel_ = nullptr;
     QLabel* timeLabel_ = nullptr;
     QSlider* slider_ = nullptr;

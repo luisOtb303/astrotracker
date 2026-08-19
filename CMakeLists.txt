@@ -48,6 +48,10 @@ add_executable(astrotracker
   src/export/ExportJob.h
   src/export/ExportJob.cpp
   src/export/PipelineWorker.h
+  src/stills/PhotoSequenceReader.h
+  src/stills/PhotoSequenceReader.cpp
+  src/ui/PhotoPanel.h
+  src/ui/PhotoPanel.cpp
 )
 
 target_include_directories(astrotracker PRIVATE src)
