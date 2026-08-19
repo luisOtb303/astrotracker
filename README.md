@@ -32,9 +32,11 @@ pero resolviendo un problema que PIPP no cubre bien.
 - **Visual debugging**: bounding box, centro detectado, trayectoria, confidence y
   estado de tracking superpuestos sobre el vídeo.
 - **Modo "Fotos"**: abre una secuencia de fotos (JPG/PNG/TIFF/BMP y
-  **RAW CR2/CR3, DNG, NEF, ARW… vía LibRaw**) en una pestaña con filmstrip de
-  miniaturas (usa la miniatura embebida del RAW) y dos visores, y la centrará
-  sobre el objeto foto a foto (en curso).
+  **RAW CR2/CR3, DNG, NEF, ARW… vía LibRaw**), permite **dibujar el círculo de
+  la posición del disco** (directo o inscrito en un recuadro) y **seguir la
+  secuencia foto a foto**: el visor "Centrado" muestra cada foto desplazada
+  para que el Sol/Luna quede centrado, con el círculo sólido (válido) o
+  discontinuo (supuesto) cuando el objeto está oculto por nubes o el horizonte.
 
 ## Uso (flujo típico)
 
@@ -131,10 +133,12 @@ estabilización por traslación (Fase 3), pipeline de dos pasadas con exportaci�
 FFmpeg (Fase 4), estabilización desde la UI (Fase 5) y el modo "Fotos" (Fase 6):
 pestaña separada con filmstrip de miniaturas, dos visores (original / centrado),
 navegación y apertura por carpeta o multi-selección, con lectura de
-JPG/PNG/TIFF/BMP y RAW (**CR2/CR3 y demás formatos de LibRaw**, 8/16-bit,
-vendido en `third_party/libraw`). Pendiente en Fase 6: seguimiento por
-círculo-máscara con predicción, correcciones manuales arrastrando el círculo y
-exportación de la secuencia centrada (fotos y/o MP4).
+JPG/PNG/TIFF/BMP y RAW (**CR2/CR3 y demás formatos de LibRaw**, vendido en
+`third_party/libraw`), **seguimiento del disco por círculo** (DiscTracker +
+CircleEstimator, radio fijo), político de oclusión "predecir con aviso visual"
+(círculo discontinuo) y corrección manual arrastrando el círculo en cualquier
+foto. Pendiente en Fase 6: exportación de la secuencia centrada (fotos y/o MP4)
+y la política "preguntar (pausa)" de oclusión.
 
 No está fuera del alcance actual: tratamiento de exposición/curvas tipo
 darktable/lightroom (fase posterior).

@@ -24,8 +24,9 @@ Véase la especificación completa en `docs/` (research.md y futuros docs).
 - Imágenes/visión: **OpenCV** (`cv::Mat`)
 - vid.stab: referencia para el subsistema de estabilización y módulo opcional de
   "global stabilization"; el núcleo es object-tracking propio
-- Trackers: TemplateTracker y CentroidTracker son los principales. CSRT es opcional
-  (requiere opencv_contrib) y NO se asume como solución definitiva
+- Trackers: TemplateTracker y CentroidTracker son los principales (vídeo);
+  el modo Fotos usa el núcleo propio DiscTracker/CircleEstimator (radio fijo).
+  CSRT es opcional (requiere opencv_contrib) y NO se asume como solución definitiva
 - Pipeline: **dos pasadas** — (1) analizar/seguir/calcular transforms, (2) aplicar y codificar
 
 ## Commands

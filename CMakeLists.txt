@@ -16,6 +16,7 @@ add_subdirectory(third_party/libraw)
 add_executable(astrotracker
   src/app/main.cpp
   src/common/Frame.h
+  src/common/CircleF.h
   src/video/IVideoReader.h
   src/video/FFmpegVideoReader.h
   src/video/FFmpegVideoReader.cpp
@@ -28,6 +29,10 @@ add_executable(astrotracker
   src/tracking/TemplateTracker.cpp
   src/tracking/CentroidTracker.h
   src/tracking/CentroidTracker.cpp
+  src/tracking/CircleEstimator.h
+  src/tracking/CircleEstimator.cpp
+  src/tracking/DiscTracker.h
+  src/tracking/DiscTracker.cpp
   src/motion/TrackStatus.h
   src/motion/Kalman.h
   src/motion/Kalman.cpp
@@ -51,6 +56,7 @@ add_executable(astrotracker
   src/export/PipelineWorker.h
   src/stills/PhotoSequenceReader.h
   src/stills/PhotoSequenceReader.cpp
+  src/stills/PhotoTrackWorker.h
   src/raw/RawDecoder.h
   src/raw/RawDecoder.cpp
   src/ui/PhotoPanel.h

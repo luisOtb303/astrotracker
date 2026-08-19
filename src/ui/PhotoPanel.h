@@ -1,26 +1,33 @@
 #pragma once
 
+#include "common/CircleF.h"
+#include "motion/TrackStatus.h"
 #include "stills/PhotoSequenceReader.h"
+#include "tracking/DiscTracker.h"
 
 #include <QWidget>
-#include <memory>
+#include <vector>
 
 class QAction;
+class QComboBox;
 class QLabel;
 class QListWidget;
 class QListWidgetItem;
+class QProgressDialog;
 class QSlider;
 class VideoView;
+class PhotoTrackWorker;
 
-// Pestaña "Fotos": abre una secuencia de fotos (JPG/PNG/TIFF/BMP) y muestra
-// el filmstrip completo, con dos visores (Original | Centrado). En M3/M4 se
-// añadirán el seguimiento por círculo y la exportación.
+// Pestaña "Fotos": abre una secuencia de fotos (JPG/PNG/TIFF/BMP y RAW CR2/CR3)
+// y permite sembrar un círculo (posición supuesta del disco), seguir la
+// secuencia foto a foto y ver el resultado centrado en el visor derecho.
 class PhotoPanel : public QWidget
 {
     Q_OBJECT
 
 public:
     explicit PhotoPanel(QWidget* parent = nullptr);
+    ~PhotoPanel() override;
 
     bool isOpen() const { return reader_.isOpen(); }
     int64_t currentIndex() const { return current_; }
@@ -34,13 +41,26 @@ private slots:
     void showPrev();
     void showNext();
     void showCurrent();
+    void onRoiSelected(const QRect& rect);
+    void onCircleSelected(const QPointF& center, double radius);
+    void setDrawModeCircle(bool circle);
+    void runTracking();
+    void onWorkerProgress(int done, int total);
+    void onWorkerFinished(bool ok, const QString& error, const QVector<double>& results);
 
 private:
     void openPaths(const QStringList& paths);
     void reloadSequence();
     void buildFilmstrip();
     void updateNavUi();
+    void updateTrackingUi();
+    void applyCircle(const cv::Point2f& center, float radius);
+    void applyViewModes();
+    void setTrackingBusy(bool busy);
     void clearSession();
+
+    cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
+    cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
     static QPixmap toPixmap(const cv::Mat& bgr);
 
     PhotoSequenceReader reader_;
@@ -54,6 +74,19 @@ private:
     QAction* nextAction_ = nullptr;
     QAction* analyzeAction_ = nullptr;
     QAction* exportAction_ = nullptr;
+    QAction* circleModeAction_ = nullptr;
+    QComboBox* borderCombo_ = nullptr;
+    QProgressDialog* progressDialog_ = nullptr;
+
+    bool drawCircleMode_ = true;
+    bool trackingBusy_ = false;
+    CircleF seedCircle_;
+    bool hasSeedCircle_ = false;
+    int64_t seedIndex_ = 0;
+    std::vector<DiscTrack> tracks_;
+    bool analyzed_ = false;
+    PhotoTrackWorker* worker_ = nullptr;
+
     int64_t current_ = 0;
     int displayMaxDim_ = 1600;
     int thumbMaxDim_ = 240;

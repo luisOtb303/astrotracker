@@ -9,6 +9,25 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Added
 
+- Fase 6 — Seguimiento del disco en el modo "Fotos" (M3):
+  - `common/CircleF`: círculo (centro + radio) en píxeles de la imagen de trabajo.
+  - `tracking/CircleEstimator`: ajuste robusto de círculo de **radio fijo** con
+    prior del centro (proyección iterativa + descarte de outliers); maneja
+    arcos parciales (creciente, eclipse parcial, sol tras montaña).
+  - `tracking/DiscTracker`: sigue el centro del disco foto a foto buscando el
+    limbo (paso brillante→oscuro) en una banda radial alrededor del centro
+    predicho por el modelo de movimiento; estados VALID/UNCERTAIN/LOST y
+    posición "supuesta" cuando el objeto está oculto (nube, montaña).
+  - `ui/VideoView`: modo círculo (pintar desde el centro, mover arrastrando el
+    centro, redimensionar arrastrando el borde) con pintado sólido o
+    discontinuo (predicho); sin tocar el ROI del modo vídeo.
+  - `ui/PhotoPanel`: **modos de dibujo conmutables** (Círculo | Rectángulo, el
+    círculo se ajusta inscrito), botón "Seguir secuencia" operativo, worker en
+    hilo propio (`stills/PhotoTrackWorker`) que sigue la secuencia en **ambas
+    direcciones desde la foto sembrada** sin bloquear la UI, **visor
+    "Centrado"** con el centro del círculo en el centro del visor (relleno de
+    bordes Borde negro/Réplica) y corrección manual: arrastrar el círculo en
+    cualquier foto re-siembra y vuelve a seguir desde ahí.
 - Fase 6 — Soporte RAW en el modo "Fotos" (M2):
   - **LibRaw 0.22.2 vendido en `third_party/libraw`** (LGPL-2.1/CDDL) con wrapper
     CMake propio que compila la librería estática en Windows/MSVC (defines

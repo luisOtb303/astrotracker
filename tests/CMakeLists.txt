@@ -175,3 +175,23 @@ endforeach()
 if(_samples_verified)
   add_test(NAME test_raw COMMAND test_raw ${RAW_SAMPLES})
 endif()
+
+# Test del seguimiento del disco (DiscTracker + CircleEstimator) sobre
+# discos sintéticos: lleno, creciente, sol tras montaña, oclusión total.
+
+add_executable(test_disc test_disc/main.cpp
+  ../src/motion/TrackStatus.h
+  ../src/motion/Kalman.h
+  ../src/motion/Kalman.cpp
+  ../src/motion/MotionModel.h
+  ../src/motion/MotionModel.cpp
+  ../src/tracking/CircleEstimator.h
+  ../src/tracking/CircleEstimator.cpp
+  ../src/tracking/DiscTracker.h
+  ../src/tracking/DiscTracker.cpp)
+
+target_include_directories(test_disc PRIVATE ../src)
+target_compile_definitions(test_disc PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_disc PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_disc COMMAND test_disc)

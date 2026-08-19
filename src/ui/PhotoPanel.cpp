@@ -1,9 +1,13 @@
 #include "ui/PhotoPanel.h"
 
+#include "processing/BorderHandler.h"
+#include "stills/PhotoTrackWorker.h"
 #include "ui/VideoView.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -18,6 +22,9 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <opencv2/imgproc.hpp>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 namespace {
 
@@ -47,15 +54,36 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     tb->addAction(tr("Abrir carpeta"), this, &PhotoPanel::openFolderDialog);
     tb->addAction(tr("Abrir fotos..."), this, &PhotoPanel::openImagesDialog);
     tb->addSeparator();
+
+    QActionGroup* modeGroup = new QActionGroup(tb);
+    modeGroup->setExclusive(true);
+    circleModeAction_ = tb->addAction(tr("Círculo"));
+    circleModeAction_->setCheckable(true);
+    circleModeAction_->setChecked(true);
+    circleModeAction_->setToolTip(tr("Dibujar/editar el círculo (posición del disco)"));
+    modeGroup->addAction(circleModeAction_);
+    QAction* rectModeAction = tb->addAction(tr("Rectángulo"));
+    rectModeAction->setCheckable(true);
+    rectModeAction->setToolTip(tr("Dibujar un recuadro; el círculo se ajusta dentro"));
+    modeGroup->addAction(rectModeAction);
+    connect(circleModeAction_, &QAction::toggled, this, &PhotoPanel::setDrawModeCircle);
+
+    borderCombo_ = new QComboBox(this);
+    borderCombo_->addItem(tr("Borde negro"));
+    borderCombo_->addItem(tr("Borde réplica"));
+    borderCombo_->setToolTip(tr("Relleno de los bordes al centrar el visor"));
+    tb->addWidget(borderCombo_);
+
+    tb->addSeparator();
     prevAction_ = tb->addAction(tr("Anterior"), this, &PhotoPanel::showPrev);
     nextAction_ = tb->addAction(tr("Siguiente"), this, &PhotoPanel::showNext);
     tb->addSeparator();
     analyzeAction_ = tb->addAction(tr("Seguir secuencia"));
     analyzeAction_->setEnabled(false);
-    analyzeAction_->setToolTip(tr("Disponible en la próxima etapa (seguimiento por círculo)"));
+    analyzeAction_->setToolTip(tr("Seguir el disco foto a foto y centrar los visores"));
     exportAction_ = tb->addAction(tr("Exportar centradas..."));
     exportAction_->setEnabled(false);
-    exportAction_->setToolTip(tr("Disponible en la próxima etapa (centrado y exportación)"));
+    exportAction_->setToolTip(tr("Disponible en la próxima etapa (exportación a archivo)"));
     root->addWidget(tb);
 
     auto* viewers = new QHBoxLayout();
@@ -65,7 +93,6 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     srcTitle->setAlignment(Qt::AlignCenter);
     sourceBox->addWidget(srcTitle);
     view_ = new VideoView(this);
-    view_->setRoiEnabled(true);
     sourceBox->addWidget(view_, 1);
 
     auto* resultBox = new QVBoxLayout();
@@ -74,6 +101,7 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     resultBox->addWidget(resTitle);
     resultView_ = new VideoView(this);
     resultView_->setRoiEnabled(false);
+    resultView_->setCircleEnabled(false);
     resultBox->addWidget(resultView_, 1);
 
     viewers->addLayout(sourceBox, 1);
@@ -109,10 +137,15 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     connect(filmstrip_, &QListWidget::itemActivated, this, &PhotoPanel::onItemActivated);
     connect(filmstrip_, &QListWidget::itemClicked, this, &PhotoPanel::onItemActivated);
     connect(slider_, &QSlider::valueChanged, this, &PhotoPanel::onSliderChanged);
+    connect(view_, &VideoView::roiSelected, this, &PhotoPanel::onRoiSelected);
+    connect(view_, &VideoView::circleSelected, this, &PhotoPanel::onCircleSelected);
 
     prevAction_->setEnabled(false);
     nextAction_->setEnabled(false);
+    applyViewModes();
 }
+
+PhotoPanel::~PhotoPanel() = default;
 
 void PhotoPanel::openImagesDialog()
 {
@@ -168,11 +201,18 @@ void PhotoPanel::clearSession()
     filmstrip_->clear();
     view_->setFrame(cv::Mat());
     resultView_->setFrame(cv::Mat());
+    view_->clearCircle();
+    resultView_->clearCircle();
     slider_->setEnabled(false);
     prevAction_->setEnabled(false);
     nextAction_->setEnabled(false);
+    hasSeedCircle_ = false;
+    seedIndex_ = 0;
+    tracks_.clear();
+    analyzed_ = false;
     indexLabel_->setText(tr("Foto: - / -"));
     infoLabel_->setText(tr("Abrir una carpeta o seleccionar fotos para empezar"));
+    updateTrackingUi();
 }
 
 void PhotoPanel::reloadSequence()
@@ -189,8 +229,16 @@ void PhotoPanel::reloadSequence()
     if (filmstrip_->count() > 0)
         filmstrip_->setCurrentRow(0);
 
+    hasSeedCircle_ = false;
+    seedIndex_ = 0;
+    tracks_.clear();
+    analyzed_ = false;
+    view_->clearCircle();
+    resultView_->clearCircle();
+
     showCurrent();
     updateNavUi();
+    updateTrackingUi();
 }
 
 void PhotoPanel::buildFilmstrip()
@@ -265,7 +313,27 @@ void PhotoPanel::showCurrent()
         return;
     }
     view_->setFrame(frame);
-    resultView_->setFrame(frame);
+
+    if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
+        const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
+        if (t.radius > 0.f) {
+            view_->setCircle(QPointF(t.center.x, t.center.y), t.radius, t.predicted);
+            resultView_->setFrame(centeredFrame(frame, t));
+            resultView_->setCircle(QPointF(frame.cols / 2.0, frame.rows / 2.0),
+                                   t.radius, t.predicted);
+            return;
+        }
+    }
+
+    if (hasSeedCircle_) {
+        view_->setCircle(QPointF(seedCircle_.center.x, seedCircle_.center.y),
+                         seedCircle_.radius, false);
+        resultView_->setFrame(centeredFrame(frame, seedCircle_));
+        resultView_->clearCircle();
+    } else {
+        resultView_->setFrame(frame);
+        resultView_->clearCircle();
+    }
 }
 
 void PhotoPanel::updateNavUi()
@@ -282,7 +350,188 @@ void PhotoPanel::updateNavUi()
     indexLabel_->setText(tr("Foto: %1 / %2")
                              .arg(current_ + 1)
                              .arg(reader_.count()));
-    infoLabel_->setText(QString::fromStdString(reader_.fileName(current_)));
+    QString info = QString::fromStdString(reader_.fileName(current_));
+    if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
+        const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
+        if (t.predicted)
+            info += tr("  ·  círculo supuesto");
+        else if (t.status == TrackStatus::VALID)
+            info += tr("  ·  válido");
+        else if (t.status == TrackStatus::UNCERTAIN)
+            info += tr("  ·  incierto");
+    }
+    infoLabel_->setText(info);
+}
+
+void PhotoPanel::onRoiSelected(const QRect& rect)
+{
+    if (rect.isEmpty())
+        return;
+    const cv::Point2f center(rect.x() + rect.width() / 2.0f,
+                             rect.y() + rect.height() / 2.0f);
+    const float radius = std::min(rect.width(), rect.height()) / 2.0f;
+    applyCircle(center, radius);
+}
+
+void PhotoPanel::onCircleSelected(const QPointF& center, double radius)
+{
+    if (radius <= 0.0)
+        return;
+    applyCircle(cv::Point2f(static_cast<float>(center.x()),
+                            static_cast<float>(center.y())),
+                static_cast<float>(radius));
+}
+
+void PhotoPanel::setDrawModeCircle(bool circle)
+{
+    drawCircleMode_ = circle;
+    applyViewModes();
+}
+
+void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
+{
+    if (radius <= 0.f)
+        return;
+    seedCircle_ = CircleF{center, radius};
+    hasSeedCircle_ = true;
+    seedIndex_ = current_;
+    view_->setCircle(QPointF(center.x, center.y), radius, false);
+
+    if (analyzed_ && !trackingBusy_) {
+        analyzed_ = false;
+        tracks_.clear();
+        runTracking();
+    } else {
+        showCurrent();
+        updateTrackingUi();
+    }
+}
+
+void PhotoPanel::applyViewModes()
+{
+    view_->setCircleEnabled(drawCircleMode_ && !trackingBusy_);
+    view_->setRoiEnabled(!drawCircleMode_ && !trackingBusy_);
+}
+
+void PhotoPanel::setTrackingBusy(bool busy)
+{
+    trackingBusy_ = busy;
+    applyViewModes();
+    analyzeAction_->setEnabled(!busy && reader_.isOpen() && hasSeedCircle_);
+    prevAction_->setEnabled(!busy);
+    nextAction_->setEnabled(!busy);
+    slider_->setEnabled(!busy && reader_.count() > 1);
+    circleModeAction_->setEnabled(!busy);
+    borderCombo_->setEnabled(!busy);
+}
+
+void PhotoPanel::updateTrackingUi()
+{
+    analyzeAction_->setEnabled(reader_.isOpen() && hasSeedCircle_ && !trackingBusy_);
+}
+
+void PhotoPanel::runTracking()
+{
+    if (worker_ || !reader_.isOpen() || !hasSeedCircle_)
+        return;
+
+    QStringList paths;
+    paths.reserve(static_cast<int>(reader_.count()));
+    for (int64_t i = 0; i < reader_.count(); ++i)
+        paths.push_back(QString::fromStdString(reader_.filePath(i)));
+
+    worker_ = new PhotoTrackWorker(paths, seedCircle_, seedIndex_, displayMaxDim_,
+                                   DiscTrackerParams(), this);
+
+    progressDialog_ = new QProgressDialog(tr("Seguimiento del disco..."), tr("Cancelar"), 0,
+                                          static_cast<int>(reader_.count()), this);
+    progressDialog_->setWindowModality(Qt::WindowModal);
+    progressDialog_->setMinimumDuration(0);
+    progressDialog_->setAutoClose(false);
+    progressDialog_->setWindowTitle(tr("Seguir secuencia"));
+
+    connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
+    connect(worker_, &PhotoTrackWorker::finished, this, &PhotoPanel::onWorkerFinished);
+    connect(worker_, &QThread::finished, worker_, &QObject::deleteLater);
+    connect(progressDialog_, &QProgressDialog::canceled, worker_, &PhotoTrackWorker::requestStop);
+
+    setTrackingBusy(true);
+    progressDialog_->show();
+    worker_->start();
+}
+
+void PhotoPanel::onWorkerProgress(int done, int total)
+{
+    if (progressDialog_) {
+        progressDialog_->setRange(0, total);
+        progressDialog_->setValue(done);
+    }
+}
+
+void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>& results)
+{
+    tracks_.clear();
+    analyzed_ = false;
+    if (ok && !results.isEmpty()) {
+        const int stride = 5;
+        tracks_.reserve(static_cast<size_t>(results.size() / stride));
+        for (int i = 0; i + stride <= results.size(); i += stride) {
+            DiscTrack t;
+            t.center = cv::Point2f(static_cast<float>(results[i]),
+                                   static_cast<float>(results[i + 1]));
+            t.radius = static_cast<float>(results[i + 2]);
+            t.status = static_cast<TrackStatus>(static_cast<int>(results[i + 3]));
+            t.predicted = results[i + 4] > 0.5;
+            tracks_.push_back(t);
+        }
+        analyzed_ = !tracks_.empty();
+    }
+
+    if (progressDialog_) {
+        progressDialog_->hide();
+        progressDialog_->deleteLater();
+        progressDialog_ = nullptr;
+    }
+    worker_ = nullptr;
+
+    setTrackingBusy(false);
+    updateNavUi();
+    showCurrent();
+    updateTrackingUi();
+
+    if (analyzed_) {
+        int valid = 0, predicted = 0;
+        for (const DiscTrack& t : tracks_) {
+            if (t.predicted)
+                ++predicted;
+            else if (t.status == TrackStatus::VALID)
+                ++valid;
+        }
+        infoLabel_->setText(tr("Seguimiento: %1 fotos, %2 válidas, %3 supuestas")
+                                .arg(tracks_.size())
+                                .arg(valid)
+                                .arg(predicted));
+    } else {
+        infoLabel_->setText(tr("El seguimiento no pudo confirmar el disco"));
+    }
+}
+
+cv::Mat PhotoPanel::centeredFrame(const cv::Mat& frame, const DiscTrack& track)
+{
+    const cv::Point2f offset(frame.cols / 2.0f - track.center.x,
+                             frame.rows / 2.0f - track.center.y);
+    const auto mode = (borderCombo_->currentIndex() == 1) ? BorderMode::Replicate
+                                                          : BorderMode::Black;
+    return BorderHandler::apply(frame, offset, mode);
+}
+
+cv::Mat PhotoPanel::centeredFrame(const cv::Mat& frame, const CircleF& circle)
+{
+    const cv::Point2f offset(frame.cols / 2.0f - circle.center.x,
+                             frame.rows / 2.0f - circle.center.y);
+    const auto mode = (borderCombo_->currentIndex() == 1) ? BorderMode::Replicate
+                                                          : BorderMode::Black;
+    return BorderHandler::apply(frame, offset, mode);
 }
 
 QPixmap PhotoPanel::toPixmap(const cv::Mat& bgr)
