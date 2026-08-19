@@ -7,6 +7,18 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+### Added
+
+- Fase 6 (M3) — **Re-adquisición del disco por plantilla**: cuando el Sol/Luna
+  salta entre fotos más de lo que abarca la banda radial (deriva típica sin
+  star tracker), el seguimiento compara cada foto contra el parche del círculo
+  de la última foto confirmada (`matchTemplate`) y amplía la ventana de
+  búsqueda progresivamente hasta volver a localizar el disco, en lugar de
+  quedarse con la predicción congelada en el círculo de la semilla. _(en
+  desarrollo)_
+
+## [0.1.0] - 2026-08-19
+
 ### Changed
 
 - **La app ya no abre la ventana negra de consola**: el ejecutable se vincula
@@ -78,8 +90,6 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   - `testdata/photos/`: secuencia de ejemplo (10 fotos con el disco móvil,
     extraídas de `moon.mp4`).
 
-### Added
-
 - Inicialización del repositorio: `AGENTS.md` (decisiones técnicas y comandos de
   build/test), `README.md`, `changelog.md`, `.gitignore`, CMakeLists raíz.
 - `docs/research.md`: investigación (PIPP, vid.stab, OpenCV, FFmpeg, SER Player,
@@ -101,8 +111,6 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   - `tests/smoke_reader`: smoke test de decodificación/seek del reader (CTest).
   - `testdata/moon.mp4`: vídeo sintético de prueba (disco brillante móvil).
 
-### Added
-
 - Fase 3 — Estabilización por traslación:
   - `TargetPosition`: punto objetivo (por defecto, centro del frame) donde se
     mantiene el objeto.
@@ -121,8 +129,6 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   (la medición es 2D); ahora se usa matemática 2×2 y el filtro converge
   correctamente a posición y velocidad.
 
-### Added
-
 - Fase 2 — Núcleo de tracking:
   - `ITracker`: interfaz de trackers (init + track), `TrackResult` con
     confianza y flag `found`.
@@ -136,8 +142,6 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
     `VALID / UNCERTAIN / LOST` con `consecutiveMisses`.
   - `tests/test_motion` y `tests/test_trackers` (CTest): convergencia de
     Kalman, transiciones de estado y seguimiento sobre frames sintéticos.
-
-### Added
 
 - Fase 4 — Pipeline de dos pasadas y exportación:
   - `IVideoWriter`: interfaz de escritura de vídeo (open/write/close).
@@ -156,8 +160,6 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   - `tests/test_pipeline` (CTest): vídeo sintético de 40 frames, tracking
     válido en todos, salida con 40 frames y objeto centrado (≤5 px).
 
-### Fixed
-
 - `FFmpegVideoWriter`: el último frame se perdía (30 paquetes en el contenedor,
   solo 29 decodificables): los paquetes salían con `duration = 0` y el muxer MP4
   escribía la duración del track igual al último PTS, marcando la última muestra
@@ -173,8 +175,6 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 - `tests/test_pipeline`: la ROI de prueba no estaba centrada en el disco y la
   velocidad (9,4 px/frame) producía un lag de suavizado que excedía la
   tolerancia; se centra la ROI en el disco y se usa una deriva lenta realista.
-
-### Added
 
 - Fase 5 — Estabilización desde la UI:
   - `PipelineSettings`: parámetros del pipeline (tracker Template/Centroid,

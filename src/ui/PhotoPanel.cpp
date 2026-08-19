@@ -499,6 +499,7 @@ void PhotoPanel::runTracking()
                                    DiscTrackerParams(), this);
 
     connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
+    connect(worker_, &PhotoTrackWorker::reacquired, this, &PhotoPanel::onWorkerReacquired);
     connect(worker_, &PhotoTrackWorker::finished, this, &PhotoPanel::onWorkerFinished);
     connect(worker_, &QThread::finished, worker_, &QObject::deleteLater);
 
@@ -520,6 +521,14 @@ void PhotoPanel::onWorkerProgress(int done, int total)
 {
     emit workProgress(done, total);
     emit statusMessage(tr("Procesando foto %1/%2...").arg(done).arg(total));
+}
+
+void PhotoPanel::onWorkerReacquired(int64_t index, int predictedBefore)
+{
+    emit statusMessage(tr("Re-encontrado el disco en la foto %1 tras %2 fotos "
+                          "supuestas. Ampliando la búsqueda...")
+                           .arg(index + 1)
+                           .arg(predictedBefore), 3000);
 }
 
 void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>& results)

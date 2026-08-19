@@ -56,6 +56,7 @@ private slots:
     void runTracking();
     void stopTracking();
     void onWorkerProgress(int done, int total);
+    void onWorkerReacquired(int64_t index, int predictedBefore);
     void onWorkerFinished(bool ok, const QString& error, const QVector<double>& results);
 
 private:

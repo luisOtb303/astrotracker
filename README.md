@@ -135,7 +135,10 @@ pestaña separada con filmstrip de miniaturas, dos visores (original / centrado)
 navegación y apertura por carpeta o multi-selección, con lectura de
 JPG/PNG/TIFF/BMP y RAW (**CR2/CR3 y demás formatos de LibRaw**, vendido en
 `third_party/libraw`), **seguimiento del disco por círculo** (DiscTracker +
-CircleEstimator, radio fijo), político de oclusión "predecir con aviso visual"
+CircleEstimator, radio fijo) con **re-adquisición por plantilla y ventana de
+búsqueda adaptativa** (si el Sol/Luna salta entre fotos, se compara con el
+parche del último disco confirmado y se amplía la búsqueda hasta volver a
+localizarlo), político de oclusión "predecir con aviso visual"
 (círculo discontinuo) y corrección manual arrastrando el círculo en cualquier
 foto. Pendiente en Fase 6: exportación de la secuencia centrada (fotos y/o MP4)
 y la política "preguntar (pausa)" de oclusión.

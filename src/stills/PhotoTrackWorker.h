@@ -66,6 +66,8 @@ public:
                 res[k + 2] = t.radius;
                 res[k + 3] = static_cast<double>(static_cast<int>(t.status));
                 res[k + 4] = t.predicted ? 1.0 : 0.0;
+                if (t.reacquired)
+                    emit reacquired(i, t.predictedBefore);
             } else {
                 const int k = static_cast<int>(i) * 5;
                 res[k + 3] = static_cast<double>(static_cast<int>(TrackStatus::LOST));
@@ -103,6 +105,9 @@ public:
 signals:
     void progress(int done, int total);
     void finished(bool ok, const QString& error, const QVector<double>& results);
+    // El disco volvió a confirmarse en la foto `index` tras `predictedBefore`
+    // fotos "supuestas" (re-adquisición tras pérdida/salto).
+    void reacquired(int64_t index, int predictedBefore);
 
 private:
     QStringList paths_;

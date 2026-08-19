@@ -13,6 +13,11 @@ struct DiscTrack {
     // true cuando la posición viene de la predicción (objeto oculto o sin
     // confirmación): el círculo se muestra como "supuesto".
     bool predicted = false;
+    // true cuando esta foto volvió a confirmar el disco tras una racha de fotos
+    // "supuestas" (objeto oculto o salto grande); predictedBefore indica
+    // cuántas fotos supuestas le precedieron.
+    bool reacquired = false;
+    int predictedBefore = 0;
 };
 
 // Parámetros del seguimiento del disco (Sol/Luna) por perfil radial.
@@ -24,6 +29,17 @@ struct DiscTrackerParams {
     float validRatio = 0.40f;      // inliers/rayos para considerar VALID
     float acceptRatio = 0.15f;     // mínimo para aceptar la medición (UNCERTAIN)
     int lostAfterMisses = 3;
+    // Ventana de búsqueda base para re-adquirir el disco: R*searchMarginScale,
+    // con un mínimo de searchMarginMinPx píxeles. Si el objeto salta entre
+    // fotos más de lo que abarca esta ventana, crece searchGrowthPerMiss por
+    // cada foto fallida hasta maxSearchFactor*base.
+    float searchMarginScale = 0.6f;
+    float searchMarginMinPx = 20.f;
+    float searchGrowthPerMiss = 0.8f;
+    float maxSearchFactor = 8.f;
+    // Correlación mínima (matchTemplate, TM_CCOEFF_NORMED) para dar por buena
+    // la plantilla del último disco confirmado.
+    float templateCorrMin = 0.35f;
 };
 
 // Sigue el centro de un disco de radio fijo foto a foto. En cada foto busca el
@@ -31,7 +47,12 @@ struct DiscTrackerParams {
 // predicho por el modelo de movimiento; los puntos del limbo se ajustan a un
 // círculo de radio fijo (CircleEstimator). Si no hay confirmación (nube,
 // montaña, eclipse), se mantiene la posición predicha y el estado se degrada a
-// UNCERTAIN/LOST. El radio fijado por el usuario nunca se modifica.
+// UNCERTAIN/LOST. Para no "atascarse" en la semilla cuando el objeto salta
+// fuera de esa banda (deriva típica sin star tracker), la localización gruesa
+// usa como plantilla el parche del último disco confirmado (matchTemplate) o,
+// en su defecto, el blob brillante más grande, y amplía la ventana de búsqueda
+// progresivamente hasta volver a confirmar. El radio fijado por el usuario
+// nunca se modifica.
 class DiscTracker
 {
 public:
@@ -45,7 +66,18 @@ public:
     DiscTrack track(const cv::Mat& bgr);
 
 private:
+    float searchMargin() const;
+    // Localización gruesa del disco dentro de la ventana de búsqueda centrada
+    // en `pred`. Devuelve tu coarse (centro candidato) si lo encontró.
+    bool locateCoarse(const cv::Mat& gray, const cv::Point2f& pred,
+                      cv::Point2f& coarse) const;
+    void refreshTemplate(const cv::Mat& gray, const cv::Point2f& center);
+
     DiscTrackerParams p_;
     MotionModel motion_;
     float radius_ = 0.f;
+    cv::Mat template_;
+    int searchMisses_ = 0;
+    int predictedRun_ = 0;
+    bool lastPredicted_ = false;
 };

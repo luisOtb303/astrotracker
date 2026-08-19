@@ -132,6 +132,74 @@ void testFullOcclusionPredicts()
     std::printf("covered: dist=%f\n", dist);
 }
 
+void testJumpReacquire()
+{
+    const int r = 30;
+    DiscTracker tracker;
+    const cv::Point2f seed(200.f, 240.f);
+    tracker.init(seed, static_cast<float>(r));
+    tracker.track(makeDisc(seed, r)); // frame 0: semilla; se crea la plantilla
+
+    // Paneo puntual grande entre fotografías (deriva típica sin star tracker):
+    // la ventana de búsqueda debe crecer hasta volver a localizar el disco.
+    cv::Point2f pos(seed.x + 55.f, seed.y - 30.f);
+    const cv::Point2f vel(9.f, -6.f);
+
+    bool reacquired = false;
+    int foundCount = 0;
+    for (int i = 1; i <= 6; ++i) { // quieto tras el paneo: re-adquisición
+        const DiscTrack t = tracker.track(makeDisc(pos, r));
+        foundCount += t.predicted ? 0 : 1;
+        reacquired = reacquired || t.reacquired;
+    }
+    for (int i = 7; i < 20; ++i) { // deriva suave constante: seguimiento fino
+        pos += vel;
+        const DiscTrack t = tracker.track(makeDisc(pos, r));
+        if (!t.predicted) {
+            ++foundCount;
+            reacquired = reacquired || t.reacquired;
+            const double dist = cv::norm(t.center - pos);
+            if (dist > 6.0) {
+                std::printf("FAIL: jump frame %d, dist=%f\n", i, dist);
+                ++failures;
+            }
+        }
+    }
+    expect(reacquired, "jump: debe re-adquirir el disco tras el salto grande");
+    expect(foundCount >= 12, "jump: la mayoría de los frames deben confirmarse");
+    std::printf("jump reacquire: found=%d/19 OK\n", foundCount);
+}
+
+void testTemplateRefresh()
+{
+    const int r = 30;
+    const cv::Point2f c(320.f, 240.f);
+    DiscTracker tracker;
+    tracker.init(c, static_cast<float>(r));
+    tracker.track(makeDisc(c, r));
+
+    // La forma cambia foto a foto (el eclipse avanza): la plantilla se
+    // refresca con cada confirmación y el seguimiento no debe perderse.
+    int found = 0;
+    for (int i = 0; i < 12; ++i) {
+        cv::Mat f = makeDisc(c, r);
+        const float frac = 0.2f + 0.06f * static_cast<float>(i);
+        cv::circle(f, cv::Point2f(c.x + r * frac, c.y), r, cv::Scalar(0, 0, 0),
+                   cv::FILLED);
+        const DiscTrack t = tracker.track(f);
+        if (!t.predicted) {
+            ++found;
+            const double dist = cv::norm(t.center - c);
+            if (dist > 4.5) {
+                std::printf("FAIL: refresh frame %d, dist=%f\n", i, dist);
+                ++failures;
+            }
+        }
+    }
+    expect(found >= 10, "template refresh: sigue confirmando con la forma cambiante");
+    std::printf("template refresh: found=%d/12 OK\n", found);
+}
+
 void testReinitFromLaterFrame()
 {
     const int r = 30;
@@ -156,6 +224,8 @@ int main()
     testCrescent();
     testSunBehindMountain();
     testFullOcclusionPredicts();
+    testJumpReacquire();
+    testTemplateRefresh();
     testReinitFromLaterFrame();
 
     if (failures == 0) {
