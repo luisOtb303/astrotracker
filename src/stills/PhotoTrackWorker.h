@@ -21,13 +21,14 @@ class PhotoTrackWorker : public QThread
 public:
     PhotoTrackWorker(const QStringList& paths, const CircleF& seed, int64_t seedIndex,
                      int analysisDim, const DiscTrackerParams& params,
-                     QObject* parent = nullptr)
+                     bool forwardOnly = false, QObject* parent = nullptr)
         : QThread(parent)
         , paths_(paths)
         , seed_(seed)
         , seedIndex_(seedIndex)
         , analysisDim_(analysisDim)
         , params_(params)
+        , forwardOnly_(forwardOnly)
     {
     }
 
@@ -91,12 +92,15 @@ public:
             emitProgress();
         }
 
-        // Pasada hacia atrás desde la semilla.
-        DiscTracker backward(params_);
-        backward.init(seed_.center, seed_.radius);
-        for (int64_t i = start - 1; i >= 0 && !stop_.load(); --i) {
-            trackOne(i, backward);
-            emitProgress();
+        // Pasada hacia atrás desde la semilla (solo en el seguimiento completo;
+        // una re-siembra puntual no retrocede: las fotos anteriores ya están OK).
+        if (!forwardOnly_) {
+            DiscTracker backward(params_);
+            backward.init(seed_.center, seed_.radius);
+            for (int64_t i = start - 1; i >= 0 && !stop_.load(); --i) {
+                trackOne(i, backward);
+                emitProgress();
+            }
         }
 
         emit finished(!stop_.load(), QString(), res);
@@ -115,5 +119,6 @@ private:
     int64_t seedIndex_ = 0;
     int analysisDim_ = 0;
     DiscTrackerParams params_;
+    bool forwardOnly_ = false;
     std::atomic<bool> stop_{false};
 };

@@ -195,3 +195,30 @@ target_compile_definitions(test_disc PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(test_disc PRIVATE ${OpenCV_LIBS})
 
 add_test(NAME test_disc COMMAND test_disc)
+
+# Verificación local opcional con CR2 reales de un eclipse (testdata/eclipse/,
+# excluido del repo). Si la carpeta no existe, el test se omite.
+
+add_executable(test_eclipse test_eclipse/main.cpp
+  ../src/stills/PhotoSequenceReader.h
+  ../src/stills/PhotoSequenceReader.cpp
+  ../src/raw/RawDecoder.h
+  ../src/raw/RawDecoder.cpp
+  ../src/motion/TrackStatus.h
+  ../src/motion/Kalman.h
+  ../src/motion/Kalman.cpp
+  ../src/motion/MotionModel.h
+  ../src/motion/MotionModel.cpp
+  ../src/tracking/CircleEstimator.h
+  ../src/tracking/CircleEstimator.cpp
+  ../src/tracking/DiscTracker.h
+  ../src/tracking/DiscTracker.cpp)
+
+target_include_directories(test_eclipse PRIVATE ../src)
+target_compile_definitions(test_eclipse PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN
+  TESTDATA_ECLIPSE="${CMAKE_SOURCE_DIR}/testdata/eclipse")
+target_link_libraries(test_eclipse PRIVATE ${OpenCV_LIBS} libraw)
+
+if(EXISTS ${CMAKE_SOURCE_DIR}/testdata/eclipse)
+  add_test(NAME test_eclipse COMMAND test_eclipse)
+endif()

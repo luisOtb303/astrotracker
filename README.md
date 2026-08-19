@@ -37,6 +37,11 @@ pero resolviendo un problema que PIPP no cubre bien.
   secuencia foto a foto**: el visor "Centrado" muestra cada foto desplazada
   para que el Sol/Luna quede centrado, con el círculo sólido (válido) o
   discontinuo (supuesto) cuando el objeto está oculto por nubes o el horizonte.
+  El filmstrip etiqueta cada miniatura (válida/supuesta/dudosa) según el
+  resultado; mover el círculo en una foto re-sigue **solo desde esa foto hacia
+  delante** (no recalcula toda la secuencia); el botón **Auto** mantiene ese
+  re-seguimiento activo o, desactivado, desarma el seguimiento tras ejecutarse
+  una vez.
 
 ## Uso (flujo típico)
 

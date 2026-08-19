@@ -72,6 +72,7 @@ private:
     void applyViewModes();
     void setTrackingBusy(bool busy);
     void clearSession();
+    void updateFilmstripBadges();
 
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
@@ -90,10 +91,18 @@ private:
     QAction* exportAction_ = nullptr;
     QAction* circleModeAction_ = nullptr;
     QAction* stopAction_ = nullptr;
+    QAction* autoAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
 
     bool drawCircleMode_ = true;
     bool trackingBusy_ = false;
+    // Re-seguimiento local: al editar un círculo sobre una foto ya analizada,
+    // solo se vuelve a seguir desde ella hacia delante (sin recalcular todas).
+    bool reseedMode_ = false;
+    int64_t reseedStart_ = -1;
+    // Modo "Auto": al editar un círculo re-sigue desde esa foto y mantiene el
+    // seguimiento activo tras una ejecución (persistible en QSettings).
+    bool autoFollow_ = true;
     CircleF seedCircle_;
     bool hasSeedCircle_ = false;
     int64_t seedIndex_ = 0;

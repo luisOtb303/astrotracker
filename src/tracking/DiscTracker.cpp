@@ -5,6 +5,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 DiscTracker::DiscTracker(const DiscTrackerParams& params)
@@ -32,61 +33,95 @@ float DiscTracker::searchMargin() const
                     base * p_.maxSearchFactor);
 }
 
-bool DiscTracker::locateCoarse(const cv::Mat& gray, const cv::Point2f& pred,
-                               cv::Point2f& coarse) const
+bool DiscTracker::locateBlob(const cv::Mat& gray, const cv::Rect& region,
+                             cv::Point2f& center) const
+{
+    const cv::Rect clamped = region & cv::Rect(0, 0, gray.cols, gray.rows);
+    if (clamped.width <= 8 || clamped.height <= 8)
+        return false;
+
+    cv::Mat bin;
+    cv::threshold(gray(clamped), bin, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::Mat labels, stats, centroids;
+    const int n = cv::connectedComponentsWithStats(bin, labels, stats, centroids);
+    if (n < 2)
+        return false;
+
+    const float minArea = 0.05f * static_cast<float>(CV_PI) * radius_ * radius_;
+    const float maxArea = 1.6f * static_cast<float>(CV_PI) * radius_ * radius_;
+    const float target = static_cast<float>(CV_PI) * radius_ * radius_;
+    float bestDiff = std::numeric_limits<float>::max();
+    int bestIdx = -1;
+    for (int i = 1; i < n; ++i) {
+        const float area = static_cast<float>(stats.at<int>(i, cv::CC_STAT_AREA));
+        if (area >= minArea && area <= maxArea) {
+            const float diff = std::fabs(area - target);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestIdx = i;
+            }
+        }
+    }
+    if (bestIdx < 0)
+        return false;
+
+    center = cv::Point2f(static_cast<float>(centroids.at<double>(bestIdx, 0)),
+                         static_cast<float>(centroids.at<double>(bestIdx, 1)));
+    center += cv::Point2f(static_cast<float>(clamped.x), static_cast<float>(clamped.y));
+    return true;
+}
+
+int DiscTracker::locateCoarse(const cv::Mat& gray, const cv::Point2f& pred,
+                              cv::Point2f& coarse) const
 {
     const int half = std::max(1, cvRound(searchMargin()));
     cv::Rect win(cvRound(pred.x) - half, cvRound(pred.y) - half, 2 * half, 2 * half);
     win &= cv::Rect(0, 0, gray.cols, gray.rows);
-    if (win.width <= 8 || win.height <= 8)
-        return false;
 
-    const cv::Mat window = gray(win);
-
-    // 1) Plantilla: el parche del último disco confirmado. Cuando aún no hay
-    //    plantilla (justo la foto de la semilla) se omite: no tiene sentido y
-    //    evita contaminar la medida precisa del primer frame.
-    if (!template_.empty() && template_.cols < win.width && template_.rows < win.height) {
+    // 1) Plantilla en la ventana: el parche del último disco confirmado. Es el
+    //    camino preferido (preciso y discriminante). Se omite en la primera
+    //    foto (aún no hay plantilla), donde la medida es la semilla del usuario.
+    if (!template_.empty() && win.width > 8 && win.height > 8 &&
+        template_.cols < win.width && template_.rows < win.height) {
         cv::Mat res;
-        cv::matchTemplate(window, template_, res, cv::TM_CCOEFF_NORMED);
-        double maxVal = 0.0;
-        cv::Point maxLoc;
-        cv::minMaxLoc(res, nullptr, &maxVal, nullptr, &maxLoc);
-        if (maxVal >= p_.templateCorrMin) {
-            coarse = cv::Point2f(win.x + maxLoc.x + template_.cols * 0.5f,
-                                 win.y + maxLoc.y + template_.rows * 0.5f);
-            return true;
+        cv::matchTemplate(gray(win), template_, res, cv::TM_SQDIFF_NORMED);
+        double minVal = 0.0;
+        cv::Point minLoc;
+        cv::minMaxLoc(res, &minVal, nullptr, &minLoc, nullptr);
+        if (minVal <= p_.templateSqMax) {
+            coarse = cv::Point2f(win.x + minLoc.x + template_.cols * 0.5f,
+                                 win.y + minLoc.y + template_.rows * 0.5f);
+            return 1;
         }
     }
 
-    // 2) Respaldo: el blob brillante (disco) con área más parecida a πR².
-    if (!template_.empty()) {
-        cv::Mat bin;
-        cv::threshold(window, bin, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
-        cv::Mat labels, stats, centroids;
-        const int n = cv::connectedComponentsWithStats(bin, labels, stats, centroids);
-        if (n > 1) {
-            const float minArea = 0.05f * static_cast<float>(CV_PI) * radius_ * radius_;
-            const float maxArea = 1.6f * static_cast<float>(CV_PI) * radius_ * radius_;
-            float bestArea = 0.f;
-            int bestIdx = -1;
-            for (int i = 1; i < n; ++i) {
-                const float area = static_cast<float>(stats.at<int>(i, cv::CC_STAT_AREA));
-                if (area >= minArea && area <= maxArea && area > bestArea) {
-                    bestArea = area;
-                    bestIdx = i;
-                }
-            }
-            if (bestIdx >= 0) {
-                coarse = cv::Point2f(static_cast<float>(centroids.at<double>(bestIdx, 0)),
-                                     static_cast<float>(centroids.at<double>(bestIdx, 1)));
-                coarse += cv::Point2f(static_cast<float>(win.x), static_cast<float>(win.y));
-                return true;
-            }
+    // 2) Blob brillante en la ventana (re-adquisición con deriva moderada).
+    if (!template_.empty() && locateBlob(gray, win, coarse))
+        return 2;
+
+    // 3) Plantilla en todo el frame: cubre saltos grandes entre fotos. Es más
+    //    discriminante que el blob (el Sol es el patrón más cercano a la
+    //    plantilla, aunque haya halo o glare).
+    if (!template_.empty() && template_.cols < gray.cols &&
+        template_.rows < gray.rows) {
+        cv::Mat res;
+        cv::matchTemplate(gray, template_, res, cv::TM_SQDIFF_NORMED);
+        double minVal = 0.0;
+        cv::Point minLoc;
+        cv::minMaxLoc(res, &minVal, nullptr, &minLoc, nullptr);
+        if (minVal <= p_.templateSqMax) {
+            coarse = cv::Point2f(minLoc.x + template_.cols * 0.5f,
+                                 minLoc.y + template_.rows * 0.5f);
+            return 3;
         }
     }
 
-    return false;
+    // 4) Blob en todo el frame (último recurso, muy ruidoso en escenas reales).
+    if (!template_.empty() &&
+        locateBlob(gray, cv::Rect(0, 0, gray.cols, gray.rows), coarse))
+        return 4;
+
+    return 0;
 }
 
 void DiscTracker::refreshTemplate(const cv::Mat& gray, const cv::Point2f& center)
@@ -109,6 +144,11 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
     cv::Mat gray;
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     cv::GaussianBlur(gray, gray, cv::Size(0, 0), 1.2);
+    // Copia normalizada solo para la búsqueda por plantilla (SQDIFF no es
+    // invariante a la exposición): reduce las diferencias de tono entre RAW sin
+    // alterar el perfil radial (que necesita el contraste real del limbo).
+    cv::Mat norm;
+    cv::normalize(gray, norm, 0, 255, cv::NORM_MINMAX);
 
     const auto sample = [&gray](const cv::Point2f& pt) -> uchar {
         const int x = cvRound(pt.x);
@@ -121,11 +161,12 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
     // Centro predicho por el modelo de movimiento (avanza sin medición).
     const cv::Point2f pred = motion_.update(false, motion_.position());
 
-    // Localización gruesa: si el objeto saltó fuera de la banda radial, buscar
-    // la plantilla (o el blob brillante) lo sitúa de nuevo de forma aproximada.
+    // Localización gruesa: si el objeto saltó fuera de la banda radial, la
+    // plantilla (o el blob) lo sitúa de nuevo de forma aproximada. Se prioriza
+    // la plantilla sobre el blob (más discriminante en escenas reales).
     cv::Point2f coarse;
-    const bool coarseOk = locateCoarse(gray, pred, coarse);
-    const cv::Point2f anchor = coarseOk ? coarse : pred;
+    const int coarseQ = locateCoarse(norm, pred, coarse);
+    const cv::Point2f anchor = (coarseQ > 0) ? coarse : pred;
 
     // Recoge puntos del limbo: a lo largo de cada rayo, el punto donde la
     // intensidad cae (brillante→oscuro) con mayor contraste.
@@ -179,10 +220,26 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
     bool found = false;
     cv::Point2f measured = pred;
     bool strongFit = false;
-    if (est.ok) {
-        found = est.inlierRatio >= p_.acceptRatio;
+    if (est.ok && est.inlierRatio >= p_.acceptRatio) {
+        found = true;
         measured = est.center;
         strongFit = est.inlierRatio >= p_.validRatio;
+    }
+
+    // Sin plantilla todavía (primera foto): si el ajuste fino no convence, la
+    // semilla pintada por el usuario es la medición inicial. Esto además crea
+    // la plantilla con la que re-adquirir el disco en las fotos siguientes.
+    if (template_.empty() && !found) {
+        found = true;
+        measured = pred;
+        strongFit = false;
+    } else if (!found && (coarseQ == 1 || coarseQ == 3)) {
+        // La plantilla sí localizó el disco con confianza aunque el ajuste fino
+        // falle (bajo contraste del limbo): usar su centro, que es lo que
+        // importa para centrar la foto.
+        found = true;
+        measured = coarse;
+        strongFit = false;
     }
 
     const cv::Point2f center = motion_.update(found, measured);
@@ -192,7 +249,7 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
     if (found) {
         out.status = strongFit ? TrackStatus::VALID : TrackStatus::UNCERTAIN;
         out.predicted = false;
-        refreshTemplate(gray, center);
+        refreshTemplate(norm, center);
         searchMisses_ = 0;
         if (lastPredicted_) {
             out.reacquired = true;

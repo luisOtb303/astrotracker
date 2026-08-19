@@ -16,6 +16,19 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   búsqueda progresivamente hasta volver a localizar el disco, en lugar de
   quedarse con la predicción congelada en el círculo de la semilla. _(en
   desarrollo)_
+- Fase 6 (M3) — **Re-seguimiento local en el modo "Fotos"**: al mover el
+  círculo en una foto ya analizada solo se vuelve a seguir **desde esa foto
+  hacia delante** (no se recalcula toda la secuencia), y el filmstrip etiqueta
+  cada miniatura como **válida / supuesta / dudosa** con el color del estado.
+- Fase 6 (M3) — **Modo "Auto" conmutable** en la barra de Fotos: activo
+  (por defecto), editar un círculo re-sigue desde esa foto y el seguimiento
+  queda disponible; desactivado, el seguimiento automático **se desarma tras
+  ejecutarse una vez** (botón deshabilitado) hasta que el usuario lo vuelva a
+  activar. El estado se persiste en `QSettings`.
+- Fase 6 — **Diagnóstico sobre las fotos del eclipse reales**: `tests/test_eclipse`
+  es un harness opcional (no falla, solo informa) que corre el motor contra los
+  CR2 de `testdata/eclipse/` y escribe overlays (verde = semilla/Otsu, rojo =
+  seguido) en `<carpeta>/_props`, para revisión visual del seguimiento.
 
 ## [0.1.0] - 2026-08-19
 

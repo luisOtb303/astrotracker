@@ -18,6 +18,8 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPixmap>
+#include <QBrush>
+#include <QColor>
 #include <QSettings>
 #include <QSlider>
 #include <QStatusBar>
@@ -91,6 +93,18 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     stopAction_->setEnabled(false);
     stopAction_->setToolTip(tr("Detener el seguimiento en curso"));
     connect(stopAction_, &QAction::triggered, this, &PhotoPanel::stopTracking);
+    autoAction_ = tb->addAction(tr("Auto"));
+    autoAction_->setCheckable(true);
+    autoAction_->setChecked(true);
+    autoAction_->setToolTip(tr("Al editar un círculo en una foto ya analizada, re-seguir "
+                              "solo desde esa foto; desactivado, el seguimiento automático "
+                              "se desarma tras ejecutarse una vez."));
+    connect(autoAction_, &QAction::toggled, this, [this](bool on) {
+        autoFollow_ = on;
+        QSettings settings;
+        settings.setValue("Photos/autoFollow", autoFollow_);
+        updateTrackingUi();
+    });
     root->addWidget(tb);
 
     auto* viewers = new QHBoxLayout();
@@ -154,6 +168,8 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     QSettings settings;
     recentFolders_ = settings.value("Photos/recentFolders").toStringList();
     lastDir_ = settings.value("Photos/lastDir").toString();
+    autoFollow_ = settings.value("Photos/autoFollow", true).toBool();
+    autoAction_->setChecked(autoFollow_);
 }
 
 PhotoPanel::~PhotoPanel() = default;
@@ -311,6 +327,36 @@ void PhotoPanel::buildFilmstrip()
 
     emit workProgress(-1, -1);
     emit statusMessage(tr("%1 fotos cargadas").arg(total), 5000);
+    updateFilmstripBadges();
+}
+
+void PhotoPanel::updateFilmstripBadges()
+{
+    // Etiqueta bajo cada miniatura: "válida"/"supuesta"/"dudosa" según el
+    // resultado del seguimiento, coloreada para distinguirla de un vistazo.
+    for (int i = 0; i < filmstrip_->count(); ++i) {
+        QListWidgetItem* item = filmstrip_->item(i);
+        const int64_t idx = item->data(Qt::UserRole).toLongLong();
+        if (idx < 0 || idx >= static_cast<int64_t>(tracks_.size())) {
+            item->setText(QString());
+            continue;
+        }
+        const DiscTrack& t = tracks_[static_cast<size_t>(idx)];
+        QString label;
+        QColor color;
+        if (t.predicted) {
+            label = tr("supuesta");
+            color = QColor(0xff, 0xa5, 0x00);
+        } else if (t.status == TrackStatus::VALID) {
+            label = tr("válida");
+            color = QColor(0x2e, 0x8b, 0x57);
+        } else {
+            label = tr("dudosa");
+            color = QColor(0xc0, 0xc0, 0xc0);
+        }
+        item->setText(label);
+        item->setForeground(QBrush(color));
+    }
 }
 
 void PhotoPanel::onItemActivated(QListWidgetItem* item)
@@ -446,9 +492,19 @@ void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
     view_->setCircle(QPointF(center.x, center.y), radius, false);
 
     if (analyzed_ && !trackingBusy_) {
-        analyzed_ = false;
-        tracks_.clear();
-        runTracking();
+        if (autoFollow_) {
+            // Re-siembra local: solo se re-sigue desde esta foto hacia delante.
+            reseedMode_ = true;
+            reseedStart_ = current_;
+            runTracking();
+        } else {
+            showCurrent();
+            updateTrackingUi();
+            emit statusMessage(
+                tr("Círculo aplicado en la foto %1 (sin re-seguir: modo \"Auto\" "
+                   "desactivado. Actívalo para seguir desde esta foto).")
+                    .arg(current_ + 1));
+        }
     } else {
         emit statusMessage(tr("Centrando la foto %1 con el círculo pintado...").arg(current_ + 1));
         showCurrent();
@@ -482,7 +538,12 @@ void PhotoPanel::setTrackingBusy(bool busy)
 
 void PhotoPanel::updateTrackingUi()
 {
-    analyzeAction_->setEnabled(reader_.isOpen() && hasSeedCircle_ && !trackingBusy_);
+    // Si el modo "Auto" está desactivado, tras una ejecución el seguimiento se
+    // desarma (botón deshabilitado) hasta que se desee relanzarlo.
+    bool canAnalyze = reader_.isOpen() && hasSeedCircle_ && !trackingBusy_;
+    if (analyzed_ && !autoFollow_)
+        canAnalyze = false;
+    analyzeAction_->setEnabled(canAnalyze);
 }
 
 void PhotoPanel::runTracking()
@@ -496,7 +557,7 @@ void PhotoPanel::runTracking()
         paths.push_back(QString::fromStdString(reader_.filePath(i)));
 
     worker_ = new PhotoTrackWorker(paths, seedCircle_, seedIndex_, displayMaxDim_,
-                                   DiscTrackerParams(), this);
+                                   DiscTrackerParams(), reseedMode_, this);
 
     connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
     connect(worker_, &PhotoTrackWorker::reacquired, this, &PhotoPanel::onWorkerReacquired);
@@ -533,30 +594,61 @@ void PhotoPanel::onWorkerReacquired(int64_t index, int predictedBefore)
 
 void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>& results)
 {
-    tracks_.clear();
-    analyzed_ = false;
+    const bool reseed = reseedMode_ && reseedStart_ >= 0;
+    const int64_t from = reseedStart_;
+
     if (ok && !results.isEmpty()) {
         const int stride = 5;
-        tracks_.reserve(static_cast<size_t>(results.size() / stride));
-        for (int i = 0; i + stride <= results.size(); i += stride) {
-            DiscTrack t;
-            t.center = cv::Point2f(static_cast<float>(results[i]),
-                                   static_cast<float>(results[i + 1]));
-            t.radius = static_cast<float>(results[i + 2]);
-            t.status = static_cast<TrackStatus>(static_cast<int>(results[i + 3]));
-            t.predicted = results[i + 4] > 0.5;
-            tracks_.push_back(t);
+        const int total = static_cast<int>(results.size() / stride);
+        if (reseed) {
+            // Re-siembra local: conserva las fotos anteriores y actualiza solo
+            // las re-seguidas a partir de la foto editada.
+            if (static_cast<int>(tracks_.size()) < total)
+                tracks_.resize(static_cast<size_t>(total));
+            for (int64_t i = from; i < total; ++i) {
+                const int at = static_cast<int>(i) * stride;
+                tracks_[static_cast<size_t>(i)].center = cv::Point2f(
+                    static_cast<float>(results[at]),
+                    static_cast<float>(results[at + 1]));
+                tracks_[static_cast<size_t>(i)].radius = static_cast<float>(results[at + 2]);
+                tracks_[static_cast<size_t>(i)].status =
+                    static_cast<TrackStatus>(static_cast<int>(results[at + 3]));
+                tracks_[static_cast<size_t>(i)].predicted = results[at + 4] > 0.5;
+            }
+        } else {
+            tracks_.clear();
+            tracks_.reserve(static_cast<size_t>(total));
+            for (int i = 0; i + stride <= results.size(); i += stride) {
+                DiscTrack t;
+                t.center = cv::Point2f(static_cast<float>(results[i]),
+                                       static_cast<float>(results[i + 1]));
+                t.radius = static_cast<float>(results[i + 2]);
+                t.status = static_cast<TrackStatus>(static_cast<int>(results[i + 3]));
+                t.predicted = results[i + 4] > 0.5;
+                tracks_.push_back(t);
+            }
+            analyzed_ = !tracks_.empty();
         }
-        analyzed_ = !tracks_.empty();
     }
-
+    reseedMode_ = false;
+    reseedStart_ = -1;
     worker_ = nullptr;
 
     setTrackingBusy(false);
     updateNavUi();
     showCurrent();
     updateTrackingUi();
+    updateFilmstripBadges();
     emit workProgress(-1, -1);
+
+    if (!ok || results.isEmpty()) {
+        if (!reseed) {
+            tracks_.clear();
+            analyzed_ = false;
+        }
+        emit statusMessage(tr("El seguimiento no pudo confirmar el disco"), 0);
+        return;
+    }
 
     if (analyzed_) {
         int valid = 0, predicted = 0;
@@ -566,10 +658,16 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
             else if (t.status == TrackStatus::VALID)
                 ++valid;
         }
-        emit statusMessage(tr("Seguimiento: %1 fotos, %2 válidas, %3 supuestas")
-                               .arg(tracks_.size())
-                               .arg(valid)
-                               .arg(predicted));
+        if (reseed)
+            emit statusMessage(tr("Re-seguido desde la foto %1: %2 válidas, %3 supuestas")
+                                   .arg(from + 1)
+                                   .arg(valid)
+                                   .arg(predicted));
+        else
+            emit statusMessage(tr("Seguimiento: %1 fotos, %2 válidas, %3 supuestas")
+                                   .arg(tracks_.size())
+                                   .arg(valid)
+                                   .arg(predicted));
     } else {
         emit statusMessage(tr("El seguimiento no pudo confirmar el disco"), 0);
     }

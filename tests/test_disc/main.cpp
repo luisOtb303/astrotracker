@@ -191,9 +191,13 @@ void testTemplateRefresh()
             ++found;
             const double dist = cv::norm(t.center - c);
             if (dist > 4.5) {
-                std::printf("FAIL: refresh frame %d, dist=%f\n", i, dist);
+                std::printf("FAIL: refresh frame %d, dist=%f c=(%5.1f,%5.1f) track=(%5.1f,%5.1f) status=%d reaq=%d\n",
+                            i, dist, c.x, c.y, t.center.x, t.center.y,
+                            static_cast<int>(t.status), t.reacquired ? 1 : 0);
                 ++failures;
             }
+        } else {
+            std::printf("i=%d predicted (skip)\n", i);
         }
     }
     expect(found >= 10, "template refresh: sigue confirmando con la forma cambiante");

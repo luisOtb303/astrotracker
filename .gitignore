@@ -6,4 +6,5 @@ CMakeUserPresets.json
 cmake-build-*/
 out/
 bin/
-*.logtestdata/eclipse/
+*.log
+testdata/eclipse/
