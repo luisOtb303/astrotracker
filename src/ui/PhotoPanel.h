@@ -52,6 +52,7 @@ private slots:
     void showCurrent();
     void onRoiSelected(const QRect& rect);
     void onCircleSelected(const QPointF& center, double radius);
+    void onFitDisc();
     void setDrawModeCircle(bool circle);
     void runTracking();
     void stopTracking();
@@ -88,6 +89,7 @@ private:
     QAction* prevAction_ = nullptr;
     QAction* nextAction_ = nullptr;
     QAction* analyzeAction_ = nullptr;
+    QAction* fitAction_ = nullptr;
     QAction* exportAction_ = nullptr;
     QAction* circleModeAction_ = nullptr;
     QAction* stopAction_ = nullptr;

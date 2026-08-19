@@ -16,6 +16,16 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   búsqueda progresivamente hasta volver a localizar el disco, en lugar de
   quedarse con la predicción congelada en el círculo de la semilla. _(en
   desarrollo)_
+- Fase 6 (M3) — **Centrado del disco por el arco visible** (`tracking/DiscArcFit`):
+  el centro del disco se obtiene del **círculo que forma la fase visible** — en
+  crecientes, menguantes, eclipse parcial y corona — no del punto más brillante
+  ni del blob. El seguimiento genera candidatos (predicción, plantilla, arco del
+  blob, blob simétrico) y elige el que muestra el **limbo radial más nítido**;
+  así el círculo rojo queda centrado en el disco real aunque el Sol/Luna esté
+  parcialmente oculto o la fase cambie de forma entre fotos.
+- Fase 6 (M3) — **Botón "Ajustar disco"** en el modo Fotos: detecta el disco en
+  la foto actual (barrido de radio + arco visible) y re-siembra el seguimiento
+  desde ahí, sin dibujar el círculo a mano.
 - Fase 6 (M3) — **Re-seguimiento local en el modo "Fotos"**: al mover el
   círculo en una foto ya analizada solo se vuelve a seguir **desde esa foto
   hacia delante** (no se recalcula toda la secuencia), y el filmstrip etiqueta

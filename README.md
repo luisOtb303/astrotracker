@@ -33,7 +33,9 @@ pero resolviendo un problema que PIPP no cubre bien.
   estado de tracking superpuestos sobre el vídeo.
 - **Modo "Fotos"**: abre una secuencia de fotos (JPG/PNG/TIFF/BMP y
   **RAW CR2/CR3, DNG, NEF, ARW… vía LibRaw**), permite **dibujar el círculo de
-  la posición del disco** (directo o inscrito en un recuadro) y **seguir la
+  la posición del disco** (directo o inscrito en un recuadro) o **ajustarlo
+  automáticamente** ("Ajustar disco": barrido de radio por el arco visible, para
+  fases parciales, crecientes y corona) y **seguir la
   secuencia foto a foto**: el visor "Centrado" muestra cada foto desplazada
   para que el Sol/Luna quede centrado, con el círculo sólido (válido) o
   discontinuo (supuesto) cuando el objeto está oculto por nubes o el horizonte.

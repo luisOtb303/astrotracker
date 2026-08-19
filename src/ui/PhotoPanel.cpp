@@ -2,6 +2,7 @@
 
 #include "processing/BorderHandler.h"
 #include "stills/PhotoTrackWorker.h"
+#include "tracking/DiscArcFit.h"
 #include "ui/VideoView.h"
 
 #include <QAction>
@@ -86,6 +87,12 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     analyzeAction_->setEnabled(false);
     analyzeAction_->setToolTip(tr("Seguir el disco foto a foto y centrar los visores"));
     connect(analyzeAction_, &QAction::triggered, this, &PhotoPanel::runTracking);
+    fitAction_ = tb->addAction(tr("Ajustar disco"));
+    fitAction_->setEnabled(false);
+    fitAction_->setToolTip(tr("Detectar el disco en la foto actual: ajusta el círculo "
+                              "que forma la fase visible (parcial, creciente o corona) "
+                              "y re-siega el seguimiento desde esta foto"));
+    connect(fitAction_, &QAction::triggered, this, &PhotoPanel::onFitDisc);
     exportAction_ = tb->addAction(tr("Exportar centradas..."));
     exportAction_->setEnabled(false);
     exportAction_->setToolTip(tr("Disponible en la próxima etapa (exportación a archivo)"));
@@ -523,11 +530,34 @@ void PhotoPanel::applyViewModes()
     view_->setRoiEnabled(!drawCircleMode_ && !trackingBusy_);
 }
 
+void PhotoPanel::onFitDisc()
+{
+    if (trackingBusy_ || !reader_.isOpen())
+        return;
+    cv::Mat fr;
+    if (!reader_.readAt(current_, fr, displayMaxDim_) || fr.empty())
+        return;
+    cv::Mat g;
+    cv::cvtColor(fr, g, cv::COLOR_BGR2GRAY);
+    const cv::Rect full(0, 0, fr.cols, fr.rows);
+    const float guess = hasSeedCircle_
+                            ? seedCircle_.radius
+                            : std::max(20.f, 0.10f * static_cast<float>(fr.cols));
+    const DiscArcEstimate e = DiscArcFit::fitDisc(
+        g, full, cv::Point2f(fr.cols * 0.5f, fr.rows * 0.5f), guess, 3.f);
+    if (!e.ok || e.radius <= 0.f) {
+        emit statusMessage(tr("No se ha podido ajustar el círculo del disco en esta foto"), 0);
+        return;
+    }
+    applyCircle(e.center, e.radius);
+}
+
 void PhotoPanel::setTrackingBusy(bool busy)
 {
     trackingBusy_ = busy;
     applyViewModes();
     analyzeAction_->setEnabled(!busy && reader_.isOpen() && hasSeedCircle_);
+    fitAction_->setEnabled(!busy && reader_.isOpen());
     stopAction_->setEnabled(busy);
     prevAction_->setEnabled(!busy);
     nextAction_->setEnabled(!busy);
@@ -544,6 +574,7 @@ void PhotoPanel::updateTrackingUi()
     if (analyzed_ && !autoFollow_)
         canAnalyze = false;
     analyzeAction_->setEnabled(canAnalyze);
+    fitAction_->setEnabled(reader_.isOpen() && !trackingBusy_);
 }
 
 void PhotoPanel::runTracking()

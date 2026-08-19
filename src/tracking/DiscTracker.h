@@ -4,6 +4,7 @@
 #include "motion/TrackStatus.h"
 
 #include <opencv2/core.hpp>
+#include <vector>
 
 // Resultado del seguimiento del disco en una foto.
 struct DiscTrack {
@@ -20,6 +21,18 @@ struct DiscTrack {
     int predictedBefore = 0;
 };
 
+// Resultado de la localización gruesa del disco en una foto.
+struct CoarseHit {
+    // 0 = nada, 1 = plantilla en ventana, 2 = blob/arco en ventana,
+    // 3 = plantilla en todo el frame, 4 = blob/arco en todo el frame.
+    int quality = 0;
+    cv::Point2f center{0.f, 0.f};
+    // Arco de limbo que sustenta el candidato (grados). Para un blob simétrico
+    // (disco lleno o corona) se marca como 360.
+    float spanDeg = 0.f;
+    bool symmetric = false;
+};
+
 // Parámetros del seguimiento del disco (Sol/Luna) por perfil radial.
 struct DiscTrackerParams {
     int rays = 72;                 // número de rayos desde el centro predicho
@@ -33,14 +46,14 @@ struct DiscTrackerParams {
     // con un mínimo de searchMarginMinPx píxeles. Si el objeto salta entre
     // fotos más de lo que abarca esta ventana, crece searchGrowthPerMiss por
     // cada foto fallida hasta maxSearchFactor*base.
-    float searchMarginScale = 0.6f;
-    float searchMarginMinPx = 20.f;
+    float searchMarginScale = 1.2f;
+    float searchMarginMinPx = 40.f;
     float searchGrowthPerMiss = 0.8f;
     float maxSearchFactor = 8.f;
     // Distancia máxima aceptada de la plantilla al buscarla con matchTemplate
     // (TM_SQDIFF_NORMED; 0 = idéntico). Las regiones planas dan valores altos,
     // así que el mínimo del disco real queda discriminado.
-    float templateSqMax = 0.4f;
+    float templateSqMax = 0.5f;
 };
 
 // Sigue el centro de un disco de radio fijo foto a foto. En cada foto busca el
@@ -68,16 +81,15 @@ public:
 
 private:
     float searchMargin() const;
-    // Localización gruesa del disco dentro de la ventana de búsqueda centrada
-    // en `pred`. Devuelve la calidad del candidato en `coarse`:
-    //   0 = nada, 1 = plantilla en ventana, 2 = blob en ventana,
-    //   3 = plantilla en todo el frame, 4 = blob en todo el frame.
-    int locateCoarse(const cv::Mat& gray, const cv::Point2f& pred,
-                     cv::Point2f& coarse) const;
-    // El blob brillante con área más parecida a πR² dentro de la región
-    // `region` (Otsu + mayor componente conexo). Devuelve su centroide.
-    bool locateBlob(const cv::Mat& gray, const cv::Rect& region,
-                    cv::Point2f& center) const;
+    // Localización gruesa: genera hasta 4 candidatos de centro (predict, matchTemplate
+    // en ventana/frame, arco del blob, blob simétrico). track() elige el mejor por
+    // la fuerza del gradiente radial del limbo.
+    void findCandidates(const cv::Mat& gray, const cv::Point2f& pred,
+                        std::vector<CoarseHit>& out) const;
+    // Un blob es "simétrico" cuando es redondeado, de área parecida a πR² y con
+    // el centroide en el centro de su caja: así el centroide coincide con el
+    // centro del disco (disco lleno o corona de la totalidad).
+    bool isSymmetricBlob(int area, int width, int height) const;
     void refreshTemplate(const cv::Mat& gray, const cv::Point2f& center);
 
     DiscTrackerParams p_;

@@ -33,6 +33,8 @@ add_executable(astrotracker WIN32
   src/tracking/CircleEstimator.cpp
   src/tracking/DiscTracker.h
   src/tracking/DiscTracker.cpp
+  src/tracking/DiscArcFit.h
+  src/tracking/DiscArcFit.cpp
   src/motion/TrackStatus.h
   src/motion/Kalman.h
   src/motion/Kalman.cpp
