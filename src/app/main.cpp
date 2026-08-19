@@ -5,6 +5,7 @@
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    app.setOrganizationName("AstroTracker");
     app.setApplicationName("AstroTracker");
     app.setApplicationVersion("0.1.0");
 

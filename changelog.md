@@ -9,6 +9,11 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Changed
 
+- **La app recuerda la última carpeta y mantiene "Recientes"**: los diálogos de
+  apertura (vídeo y fotos) vuelven a abrir en la última carpeta usada, y el menú
+  Archivo → *Recientes* lista los últimos vídeos abiertos y las últimas carpetas
+  de fotos (máx. 8 de cada), para reabrirlos con un clic. Persistencia vía
+  `QSettings` (se fija `organizationName` en `main.cpp`).
 - Barra de estado de operaciones en el modo "Fotos": el seguimiento automático
   y las operaciones lentas ya **no abren ventanas emergentes ni cambian el
   cursor a reloj**. El progreso foto a foto («Procesando foto X/Y…»), la

@@ -8,7 +8,9 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QImage>
@@ -16,6 +18,7 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPixmap>
+#include <QSettings>
 #include <QSlider>
 #include <QStatusBar>
 #include <QToolBar>
@@ -80,6 +83,7 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     analyzeAction_ = tb->addAction(tr("Seguir secuencia"));
     analyzeAction_->setEnabled(false);
     analyzeAction_->setToolTip(tr("Seguir el disco foto a foto y centrar los visores"));
+    connect(analyzeAction_, &QAction::triggered, this, &PhotoPanel::runTracking);
     exportAction_ = tb->addAction(tr("Exportar centradas..."));
     exportAction_->setEnabled(false);
     exportAction_->setToolTip(tr("Disponible en la próxima etapa (exportación a archivo)"));
@@ -146,6 +150,10 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     prevAction_->setEnabled(false);
     nextAction_->setEnabled(false);
     applyViewModes();
+
+    QSettings settings;
+    recentFolders_ = settings.value("Photos/recentFolders").toStringList();
+    lastDir_ = settings.value("Photos/lastDir").toString();
 }
 
 PhotoPanel::~PhotoPanel() = default;
@@ -153,7 +161,7 @@ PhotoPanel::~PhotoPanel() = default;
 void PhotoPanel::openImagesDialog()
 {
     const QStringList paths = QFileDialog::getOpenFileNames(
-        this, tr("Seleccionar fotos (secuencia)"), QString(),
+        this, tr("Seleccionar fotos (secuencia)"), dialogStartDir(),
         tr("Imágenes (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.cr2 *.cr3 *.dng *.nef);;"
            "RAW (*.cr2 *.cr3 *.dng *.nef *.arw *.orf *.raf *.rw2 *.pef *.srw *.raw);;"
            "Todos los archivos (*.*)"));
@@ -164,10 +172,22 @@ void PhotoPanel::openImagesDialog()
 
 void PhotoPanel::openFolderDialog()
 {
-    const QString dir = QFileDialog::getExistingDirectory(this, tr("Abrir carpeta de fotos"));
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Abrir carpeta de fotos"),
+                                                          dialogStartDir());
     if (dir.isEmpty())
         return;
+    openFolder(dir);
+}
 
+void PhotoPanel::openRecentFolder(const QString& dir)
+{
+    if (dir.isEmpty())
+        return;
+    openFolder(dir);
+}
+
+void PhotoPanel::openFolder(const QString& dir)
+{
     emit statusMessage(tr("Leyendo la carpeta de fotos..."));
     const bool ok = reader_.openFolder(dir.toStdString());
     if (!ok) {
@@ -176,7 +196,31 @@ void PhotoPanel::openFolderDialog()
                              tr("La carpeta no contiene imágenes soportadas:\n%1").arg(dir));
         return;
     }
+    rememberFolder(dir);
     reloadSequence();
+}
+
+void PhotoPanel::rememberFolder(const QString& dir)
+{
+    if (dir.isEmpty())
+        return;
+    const QString norm = QDir(dir).absolutePath();
+    recentFolders_.removeAll(norm);
+    recentFolders_.push_front(norm);
+    while (recentFolders_.size() > 8)
+        recentFolders_.removeLast();
+
+    QSettings settings;
+    settings.setValue("Photos/recentFolders", recentFolders_);
+    lastDir_ = norm;
+    settings.setValue("Photos/lastDir", lastDir_);
+}
+
+QString PhotoPanel::dialogStartDir() const
+{
+    if (!lastDir_.isEmpty() && QDir(lastDir_).exists())
+        return lastDir_;
+    return QString();
 }
 
 void PhotoPanel::openPaths(const QStringList& paths)
@@ -194,6 +238,7 @@ void PhotoPanel::openPaths(const QStringList& paths)
                              tr("Ninguno de los archivos seleccionados es una imagen soportada."));
         return;
     }
+    rememberFolder(QFileInfo(paths.first()).absolutePath());
     reloadSequence();
 }
 
@@ -405,8 +450,14 @@ void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
         tracks_.clear();
         runTracking();
     } else {
+        emit statusMessage(tr("Centrando la foto %1 con el círculo pintado...").arg(current_ + 1));
         showCurrent();
         updateTrackingUi();
+        emit statusMessage(
+            tr("Círculo aplicado en la foto %1. Pulsa \"Seguir secuencia\" para centrar "
+               "las %2 fotos automáticamente.")
+                .arg(current_ + 1)
+                .arg(reader_.count()));
     }
 }
 
@@ -452,7 +503,9 @@ void PhotoPanel::runTracking()
     connect(worker_, &QThread::finished, worker_, &QObject::deleteLater);
 
     setTrackingBusy(true);
-    emit statusMessage(tr("Seguimiento del disco..."));
+    emit statusMessage(tr("Cálculo automático del centrado a partir del círculo de "
+                          "la foto %1...")
+                           .arg(seedIndex_ + 1));
     emit workProgress(0, static_cast<int>(reader_.count()));
     worker_->start();
 }

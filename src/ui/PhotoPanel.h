@@ -33,6 +33,9 @@ public:
 
     void openImagesDialog();
     void openFolderDialog();
+    // Abre directamente una carpeta (desde el menú "Recientes"), sin diálogo.
+    void openRecentFolder(const QString& dir);
+    QStringList recentFolders() const { return recentFolders_; }
 
 signals:
     // Mensaje en la barra de estado de la ventana principal (timeoutMs 0 =
@@ -57,6 +60,9 @@ private slots:
 
 private:
     void openPaths(const QStringList& paths);
+    void openFolder(const QString& dir);
+    void rememberFolder(const QString& dir);
+    QString dialogStartDir() const;
     void reloadSequence();
     void buildFilmstrip();
     void updateNavUi();
@@ -97,4 +103,6 @@ private:
     int64_t current_ = 0;
     int displayMaxDim_ = 1600;
     int thumbMaxDim_ = 240;
+    QStringList recentFolders_;
+    QString lastDir_;
 };

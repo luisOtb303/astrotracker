@@ -13,9 +13,13 @@
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QDir>
+#include <QFileInfo>
 #include <QProgressBar>
+#include <QSettings>
 #include <QSlider>
 #include <QStatusBar>
 #include <QStyle>
@@ -49,6 +53,11 @@ void MainWindow::setupUi()
     QAction* openAction = fileMenu->addAction(tr("&Abrir vídeo..."), this,
                                               &MainWindow::openFile, QKeySequence::Open);
     fileMenu->addAction(tr("Abrir &fotos (secuencia)..."), this, &MainWindow::openPhotos);
+    fileMenu->addSeparator();
+    QMenu* recentsMenu = fileMenu->addMenu(tr("&Recientes"));
+    connect(recentsMenu, &QMenu::aboutToShow, this, [this, recentsMenu] {
+        populateRecentsMenu(recentsMenu);
+    });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Salir"), this, &QWidget::close);
 
@@ -183,10 +192,72 @@ void MainWindow::openPhotos()
     photosPanel_->openImagesDialog();
 }
 
+void MainWindow::rememberVideoPath(const QString& path)
+{
+    if (path.isEmpty())
+        return;
+    QSettings settings;
+    QStringList recent = settings.value("Video/recentFiles").toStringList();
+    recent.removeAll(path);
+    recent.push_front(path);
+    while (recent.size() > 8)
+        recent.removeLast();
+    settings.setValue("Video/recentFiles", recent);
+    settings.setValue("Video/lastDir", QFileInfo(path).absolutePath());
+}
+
+void MainWindow::populateRecentsMenu(QMenu* menu)
+{
+    menu->clear();
+
+    QSettings settings;
+    const QStringList videoFiles = settings.value("Video/recentFiles").toStringList();
+    const QStringList photoDirs = photosPanel_->recentFolders();
+
+    if (videoFiles.isEmpty() && photoDirs.isEmpty()) {
+        QAction* none = menu->addAction(tr("(sin recientes)"));
+        none->setEnabled(false);
+        return;
+    }
+
+    if (!videoFiles.isEmpty()) {
+        QAction* title = menu->addAction(tr("Vídeos"));
+        title->setEnabled(false);
+        for (const QString& v : videoFiles) {
+            QAction* a = menu->addAction(QFileInfo(v).fileName());
+            a->setToolTip(v);
+            connect(a, &QAction::triggered, this,
+                    [this, v] { openPath(v); });
+        }
+    }
+
+    if (!photoDirs.isEmpty()) {
+        menu->addSeparator();
+        QAction* title = menu->addAction(tr("Carpetas de fotos"));
+        title->setEnabled(false);
+        for (const QString& d : photoDirs) {
+            QAction* a = menu->addAction(d);
+            a->setToolTip(d);
+            connect(a, &QAction::triggered, this, [this, d] {
+                tabs_->setCurrentWidget(photosPanel_);
+                photosPanel_->openRecentFolder(d);
+            });
+        }
+    }
+}
+
 void MainWindow::openFile()
 {
+    QSettings settings;
+    QString startDir;
+    if (settings.contains("Video/lastDir")) {
+        const QString d = settings.value("Video/lastDir").toString();
+        if (QDir(d).exists())
+            startDir = d;
+    }
+
     const QString path = QFileDialog::getOpenFileName(
-        this, tr("Abrir vídeo"), QString(),
+        this, tr("Abrir vídeo"), startDir,
         tr("Vídeo (*.mp4 *.mov *.avi *.mkv *.ser *.mts *.m2ts);;Todos los archivos (*.*)"));
 
     if (path.isEmpty())
@@ -203,6 +274,8 @@ void MainWindow::openPath(const QString& path)
                               tr("No se pudo abrir el vídeo:\n%1").arg(path));
         return;
     }
+
+    rememberVideoPath(path);
 
     inPath_ = path;
     reader_ = std::move(reader);

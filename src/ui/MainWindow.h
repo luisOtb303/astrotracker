@@ -19,6 +19,7 @@ class QSlider;
 class QTabWidget;
 class QTimer;
 class QAction;
+class QMenu;
 
 class MainWindow : public QMainWindow
 {
@@ -53,6 +54,8 @@ private:
     void setupUi();
     QWidget* createVideoPage();
     void openPhotos();
+    void populateRecentsMenu(QMenu* menu);
+    void rememberVideoPath(const QString& path);
     void showCurrentFrame();
     void updateTransportUi();
     void updateStabilizationUi();
