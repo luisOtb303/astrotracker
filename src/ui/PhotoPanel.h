@@ -13,7 +13,6 @@ class QComboBox;
 class QLabel;
 class QListWidget;
 class QListWidgetItem;
-class QProgressDialog;
 class QSlider;
 class VideoView;
 class PhotoTrackWorker;
@@ -35,6 +34,13 @@ public:
     void openImagesDialog();
     void openFolderDialog();
 
+signals:
+    // Mensaje en la barra de estado de la ventana principal (timeoutMs 0 =
+    // permanente hasta el siguiente mensaje).
+    void statusMessage(const QString& msg, int timeoutMs = 0);
+    // Progreso de una operación larga; total <= 0 oculta el indicador.
+    void workProgress(int done, int total);
+
 private slots:
     void onItemActivated(QListWidgetItem* item);
     void onSliderChanged(int value);
@@ -45,6 +51,7 @@ private slots:
     void onCircleSelected(const QPointF& center, double radius);
     void setDrawModeCircle(bool circle);
     void runTracking();
+    void stopTracking();
     void onWorkerProgress(int done, int total);
     void onWorkerFinished(bool ok, const QString& error, const QVector<double>& results);
 
@@ -75,8 +82,8 @@ private:
     QAction* analyzeAction_ = nullptr;
     QAction* exportAction_ = nullptr;
     QAction* circleModeAction_ = nullptr;
+    QAction* stopAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
-    QProgressDialog* progressDialog_ = nullptr;
 
     bool drawCircleMode_ = true;
     bool trackingBusy_ = false;

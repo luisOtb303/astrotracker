@@ -73,6 +73,12 @@ public:
             }
         };
 
+        int done = 0;
+        auto emitProgress = [this, &done, n]() {
+            ++done;
+            emit progress(done, static_cast<int>(n));
+        };
+
         // Pasada hacia delante desde la semilla.
         DiscTracker forward(params_);
         forward.init(seed_.center, seed_.radius);
@@ -80,7 +86,7 @@ public:
             if (stop_.load())
                 break;
             trackOne(i, forward);
-            emit progress(static_cast<int>(i + 1), static_cast<int>(n));
+            emitProgress();
         }
 
         // Pasada hacia atrás desde la semilla.
@@ -88,7 +94,7 @@ public:
         backward.init(seed_.center, seed_.radius);
         for (int64_t i = start - 1; i >= 0 && !stop_.load(); --i) {
             trackOne(i, backward);
-            emit progress(static_cast<int>(n), static_cast<int>(n));
+            emitProgress();
         }
 
         emit finished(!stop_.load(), QString(), res);

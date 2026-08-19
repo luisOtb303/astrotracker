@@ -16,7 +16,6 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPixmap>
-#include <QProgressDialog>
 #include <QSlider>
 #include <QStatusBar>
 #include <QToolBar>
@@ -84,6 +83,10 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     exportAction_ = tb->addAction(tr("Exportar centradas..."));
     exportAction_->setEnabled(false);
     exportAction_->setToolTip(tr("Disponible en la próxima etapa (exportación a archivo)"));
+    stopAction_ = tb->addAction(tr("Detener"));
+    stopAction_->setEnabled(false);
+    stopAction_->setToolTip(tr("Detener el seguimiento en curso"));
+    connect(stopAction_, &QAction::triggered, this, &PhotoPanel::stopTracking);
     root->addWidget(tb);
 
     auto* viewers = new QHBoxLayout();
@@ -165,10 +168,10 @@ void PhotoPanel::openFolderDialog()
     if (dir.isEmpty())
         return;
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
+    emit statusMessage(tr("Leyendo la carpeta de fotos..."));
     const bool ok = reader_.openFolder(dir.toStdString());
-    QApplication::restoreOverrideCursor();
     if (!ok) {
+        emit statusMessage(tr("La carpeta no contiene imágenes soportadas: %1").arg(dir), 5000);
         QMessageBox::warning(this, tr("AstroTracker"),
                              tr("La carpeta no contiene imágenes soportadas:\n%1").arg(dir));
         return;
@@ -183,10 +186,10 @@ void PhotoPanel::openPaths(const QStringList& paths)
     for (const QString& p : paths)
         v.push_back(p.toStdString());
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
+    emit statusMessage(tr("Abriendo %1 fotos...").arg(paths.size()));
     const bool ok = reader_.open(v);
-    QApplication::restoreOverrideCursor();
     if (!ok) {
+        emit statusMessage(tr("Ninguno de los archivos es una imagen soportada"), 5000);
         QMessageBox::warning(this, tr("AstroTracker"),
                              tr("Ninguno de los archivos seleccionados es una imagen soportada."));
         return;
@@ -243,14 +246,11 @@ void PhotoPanel::reloadSequence()
 
 void PhotoPanel::buildFilmstrip()
 {
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    QProgressDialog progress(tr("Generando miniaturas..."), QString(), 0,
-                             static_cast<int>(reader_.count()), this);
-    progress.setWindowModality(Qt::WindowModal);
-    progress.setMinimumDuration(400);
-    progress.setCancelButton(nullptr);
+    const int64_t total = reader_.count();
+    emit workProgress(0, static_cast<int>(total));
+    emit statusMessage(tr("Generando miniaturas 0/%1...").arg(total));
 
-    for (int64_t i = 0; i < reader_.count(); ++i) {
+    for (int64_t i = 0; i < total; ++i) {
         cv::Mat thumb;
         if (!reader_.thumbnail(i, thumb, thumbMaxDim_))
             continue;
@@ -258,11 +258,14 @@ void PhotoPanel::buildFilmstrip()
         item->setToolTip(QString::fromStdString(reader_.fileName(i)));
         item->setData(Qt::UserRole, static_cast<qlonglong>(i));
         filmstrip_->addItem(item);
-        progress.setValue(static_cast<int>(i));
+
+        emit workProgress(static_cast<int>(i + 1), static_cast<int>(total));
+        emit statusMessage(tr("Generando miniaturas %1/%2...").arg(i + 1).arg(total));
         QApplication::processEvents();
     }
-    progress.setValue(static_cast<int>(reader_.count()));
-    QApplication::restoreOverrideCursor();
+
+    emit workProgress(-1, -1);
+    emit statusMessage(tr("%1 fotos cargadas").arg(total), 5000);
 }
 
 void PhotoPanel::onItemActivated(QListWidgetItem* item)
@@ -418,6 +421,7 @@ void PhotoPanel::setTrackingBusy(bool busy)
     trackingBusy_ = busy;
     applyViewModes();
     analyzeAction_->setEnabled(!busy && reader_.isOpen() && hasSeedCircle_);
+    stopAction_->setEnabled(busy);
     prevAction_->setEnabled(!busy);
     nextAction_->setEnabled(!busy);
     slider_->setEnabled(!busy && reader_.count() > 1);
@@ -443,29 +447,26 @@ void PhotoPanel::runTracking()
     worker_ = new PhotoTrackWorker(paths, seedCircle_, seedIndex_, displayMaxDim_,
                                    DiscTrackerParams(), this);
 
-    progressDialog_ = new QProgressDialog(tr("Seguimiento del disco..."), tr("Cancelar"), 0,
-                                          static_cast<int>(reader_.count()), this);
-    progressDialog_->setWindowModality(Qt::WindowModal);
-    progressDialog_->setMinimumDuration(0);
-    progressDialog_->setAutoClose(false);
-    progressDialog_->setWindowTitle(tr("Seguir secuencia"));
-
     connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
     connect(worker_, &PhotoTrackWorker::finished, this, &PhotoPanel::onWorkerFinished);
     connect(worker_, &QThread::finished, worker_, &QObject::deleteLater);
-    connect(progressDialog_, &QProgressDialog::canceled, worker_, &PhotoTrackWorker::requestStop);
 
     setTrackingBusy(true);
-    progressDialog_->show();
+    emit statusMessage(tr("Seguimiento del disco..."));
+    emit workProgress(0, static_cast<int>(reader_.count()));
     worker_->start();
+}
+
+void PhotoPanel::stopTracking()
+{
+    if (worker_)
+        worker_->requestStop();
 }
 
 void PhotoPanel::onWorkerProgress(int done, int total)
 {
-    if (progressDialog_) {
-        progressDialog_->setRange(0, total);
-        progressDialog_->setValue(done);
-    }
+    emit workProgress(done, total);
+    emit statusMessage(tr("Procesando foto %1/%2...").arg(done).arg(total));
 }
 
 void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>& results)
@@ -487,17 +488,13 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
         analyzed_ = !tracks_.empty();
     }
 
-    if (progressDialog_) {
-        progressDialog_->hide();
-        progressDialog_->deleteLater();
-        progressDialog_ = nullptr;
-    }
     worker_ = nullptr;
 
     setTrackingBusy(false);
     updateNavUi();
     showCurrent();
     updateTrackingUi();
+    emit workProgress(-1, -1);
 
     if (analyzed_) {
         int valid = 0, predicted = 0;
@@ -507,12 +504,12 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
             else if (t.status == TrackStatus::VALID)
                 ++valid;
         }
-        infoLabel_->setText(tr("Seguimiento: %1 fotos, %2 válidas, %3 supuestas")
-                                .arg(tracks_.size())
-                                .arg(valid)
-                                .arg(predicted));
+        emit statusMessage(tr("Seguimiento: %1 fotos, %2 válidas, %3 supuestas")
+                               .arg(tracks_.size())
+                               .arg(valid)
+                               .arg(predicted));
     } else {
-        infoLabel_->setText(tr("El seguimiento no pudo confirmar el disco"));
+        emit statusMessage(tr("El seguimiento no pudo confirmar el disco"), 0);
     }
 }
 

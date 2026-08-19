@@ -7,6 +7,16 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+### Changed
+
+- Barra de estado de operaciones en el modo "Fotos": el seguimiento automático
+  y las operaciones lentas ya **no abren ventanas emergentes ni cambian el
+  cursor a reloj**. El progreso foto a foto («Procesando foto X/Y…»), la
+  generación de miniaturas del filmstrip y el resumen final se muestran en la
+  barra de estado inferior (con la barra de progreso pequeña de la ventana).
+  El "Cancelar" pasa a un botón **"Detener"** en la barra de Fotos, activo solo
+  durante el seguimiento.
+
 ### Added
 
 - Fase 6 — Seguimiento del disco en el modo "Fotos" (M3):

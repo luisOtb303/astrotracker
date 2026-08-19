@@ -106,6 +106,22 @@ void MainWindow::setupUi()
     tabs_->addTab(photosPanel_, tr("Fotos"));
     setCentralWidget(tabs_);
 
+    connect(photosPanel_, &PhotoPanel::statusMessage, this,
+            [this](const QString& msg, int timeoutMs) {
+                statusBar()->showMessage(msg, timeoutMs);
+            });
+    connect(photosPanel_, &PhotoPanel::workProgress, this, [this](int done, int total) {
+        if (!progressBar_)
+            return;
+        if (total <= 0) {
+            progressBar_->setVisible(false);
+            return;
+        }
+        progressBar_->setRange(0, total);
+        progressBar_->setValue(done);
+        progressBar_->setVisible(true);
+    });
+
     progressBar_ = new QProgressBar(this);
     progressBar_->setVisible(false);
     statusBar()->addPermanentWidget(progressBar_);
