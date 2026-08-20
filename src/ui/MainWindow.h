@@ -20,6 +20,9 @@ class QTabWidget;
 class QTimer;
 class QAction;
 class QMenu;
+class QDockWidget;
+class QPlainTextEdit;
+class QCheckBox;
 
 class MainWindow : public QMainWindow
 {
@@ -49,6 +52,7 @@ private slots:
                            int frames, int valid, double meanConfidence);
     void onExportFinished(bool ok, const QString& error, int frames, int valid);
     void onWorkerFinished();
+    void onLogMessage(int level, const QString& text);
 
 private:
     void setupUi();
@@ -81,6 +85,10 @@ private:
     QComboBox* borderCombo_ = nullptr;
     QDoubleSpinBox* smoothSpin_ = nullptr;
     QProgressBar* progressBar_ = nullptr;
+    QDockWidget* logDock_ = nullptr;
+    QPlainTextEdit* logView_ = nullptr;
+    QCheckBox* debugCheck_ = nullptr;
+    QAction* logDockAction_ = nullptr;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;

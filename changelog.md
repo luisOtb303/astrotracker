@@ -40,6 +40,18 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   mantener la relación de aspecto). Las fotos sin resultado válido se exportan
   igualmente sin desplazar (regla: nunca descartar frames). RAW a 16 bits se
   convierte a 8 bits en la salida.
+- Fase 6 — **Selección de fotos a exportar**: cada miniatura del filmstrip tiene
+  una **casilla** (marcada por defecto); clic en la casilla solo la marca/desmarca
+  (sin navegar) y la exportación respeta esa selección. Se mantiene el estado
+  "bloqueada" (que protege del cálculo automático) independiente de la casilla.
+- Fase 6 — **Panel de salida detallado** (`common/AppLog` + dock "Salida" en
+  MainWindow): registro en color (info/aviso/error/debug) con líneas por foto
+  ("procesando IMG_4093.cr2 → centrando", "foto 3/300 · IMG_4095.cr2 → válida
+  (…)", re-adquisiciones, resúmenes), conmutable desde el menú **Ver**, botón
+  **Vaciar** y casilla **Depuración**. La barra de estado muestra durante el
+  proceso el **nombre del archivo** además del nº de foto.
+- Fase 6 — **Botón "Nuevo"** en el modo Fotos: cierra la secuencia actual y
+  limpia todos los resultados (con confirmación si hay trabajo).
 - Fase 6 (M3) — El filmstrip etiqueta cada miniatura como **válida /
   supuesta / dudosa** con el color del estado.
 - Fase 6 — **Diagnóstico sobre las fotos del eclipse reales**: `tests/test_eclipse`

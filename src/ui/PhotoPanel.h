@@ -17,6 +17,7 @@ class QSlider;
 class VideoView;
 class PhotoTrackWorker;
 class PhotoExportWorker;
+class PhotoFilmstrip;
 
 // Pestaña "Fotos": abre una secuencia de fotos (JPG/PNG/TIFF/BMP y RAW CR2/CR3)
 // y permite sembrar un círculo (posición supuesta del disco), seguir la
@@ -56,6 +57,9 @@ private slots:
     void onFitDisc();
     void onLockToggle(bool locked);
     void startExport();
+    void startNew();
+    void onFilmstripChanged(QListWidgetItem* item);
+    void onPhotoProcessed(int64_t index);
     void setDrawModeCircle(bool circle);
     void runTracking();
     void stopTracking();
@@ -84,7 +88,7 @@ private:
     static QPixmap toPixmap(const cv::Mat& bgr);
 
     PhotoSequenceReader reader_;
-    QListWidget* filmstrip_ = nullptr;
+    PhotoFilmstrip* filmstrip_ = nullptr;
     VideoView* view_ = nullptr;
     VideoView* resultView_ = nullptr;
     QSlider* slider_ = nullptr;
@@ -98,12 +102,16 @@ private:
     QAction* circleModeAction_ = nullptr;
     QAction* stopAction_ = nullptr;
     QAction* lockAction_ = nullptr;
+    QAction* resetAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
 
     bool drawCircleMode_ = true;
     bool trackingBusy_ = false;
     // Fotos bloqueadas: "Calcular automáticamente" no modifica su círculo.
     std::vector<bool> locked_;
+    // Evita que la actualización de las etiquetas del filmstrip dispare el
+    // re-sincronizado de la selección de exportación.
+    bool updatingBadges_ = false;
     CircleF seedCircle_;
     bool hasSeedCircle_ = false;
     int64_t seedIndex_ = 0;

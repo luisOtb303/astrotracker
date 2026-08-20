@@ -39,12 +39,17 @@ pero resolviendo un problema que PIPP no cubre bien.
   sigue el disco en **todas** las fotos desde el círculo sembrado; el visor
   "Centrado" muestra cada foto desplazada para que el Sol/Luna quede centrado,
   con el círculo sólido (válido) o discontinuo (supuesto) cuando el objeto está
-  oculto. El filmstrip etiqueta cada miniatura (**válida/supuesta/dudosa**);
-  editar un círculo es **siempre manual** (solo esa foto) y **"Bloquear
-  fotograma"** fija una foto para que el cálculo automático no la modifique.
+  oculto. El filmstrip etiqueta cada miniatura (**válida/supuesta/dudosa**) y
+  cada una tiene una **casilla** para decidir qué fotos se exportan (marcada por
+  defecto); editar un círculo es **siempre manual** (solo esa foto) y
+  **"Bloquear fotograma"** fija una foto para que el cálculo automático no la
+  modifique. **"Nuevo"** empieza de nuevo (cierra la secuencia). La barra de
+  estado muestra el **nombre del archivo** durante el proceso y el panel de
+  **Salida** (dock inferior, menú Ver) registra un log detallado por foto
+  ("procesando X → centrando", resultados, avisos, debug).
   **"Exportar centradas..."** guarda el resultado como **fotos JPG/PNG** o
   **vídeo MP4** (FPS configurable, resolución original / visor / HD / FHD /
-  2K / 4K).
+  2K / 4K), solo las fotos con la casilla marcada.
 
 ## Uso (flujo típico)
 

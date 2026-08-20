@@ -31,13 +31,16 @@ public:
         QString outFile;    // mp4
     };
 
+    // `selection` vacío = exportar todas; si no, solo las fotos con `true`.
     PhotoExportWorker(const QStringList& paths, const std::vector<DiscTrack>& tracks,
-                      int analysisDim, const Settings& settings, QObject* parent = nullptr)
+                      int analysisDim, const Settings& settings,
+                      const std::vector<bool>& selection = {}, QObject* parent = nullptr)
         : QThread(parent)
         , paths_(paths)
         , tracks_(tracks)
         , analysisDim_(analysisDim)
         , settings_(settings)
+        , selection_(selection)
     {
     }
 
@@ -48,11 +51,14 @@ public:
 signals:
     void progress(int done, int total);
     void finished(bool ok, const QString& error, int frames);
+    // La foto `index` acaba de procesarse (para mostrar el nombre en la UI).
+    void photoProcessed(int64_t index);
 
 private:
     QStringList paths_;
     std::vector<DiscTrack> tracks_;
     int analysisDim_ = 0;
     Settings settings_;
+    std::vector<bool> selection_;
     std::atomic<bool> stop_{false};
 };

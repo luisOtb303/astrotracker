@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/AppLog.h"
 #include "common/CircleF.h"
 #include "stills/PhotoSequenceReader.h"
 #include "tracking/DiscTracker.h"
@@ -57,14 +58,35 @@ public:
         res.fill(0.0, static_cast<int>(n) * 5);
         const int64_t start = std::min(std::max<int64_t>(seedIndex_, 0), n - 1);
 
-        const auto trackOne = [this, &reader, &res](int64_t i, DiscTracker& tracker) {
+        const auto trackOne = [this, &reader, &res, n](int64_t i, DiscTracker& tracker) {
             // Fotos bloqueadas: se siguen procesando (la cadena del tracker
             // avanza para mantener continuidad) pero no se sobrescribe su
             // resultado; la UI conserva el valor bloqueado.
             const bool locked = locked_.size() > static_cast<size_t>(i) && locked_[i];
+            emit photoProcessed(i);
             cv::Mat frame;
             if (reader.readAt(i, frame, analysisDim_)) {
                 const DiscTrack t = tracker.track(frame);
+                const QString state = t.predicted
+                                          ? QStringLiteral("supuesta")
+                                          : (t.status == TrackStatus::VALID
+                                                 ? QStringLiteral("válida")
+                                                 : QStringLiteral("dudosa"));
+                AppLog::info(
+                    QStringLiteral("foto %1/%2 · %3 → %4 (%5,%6,r%7)")
+                        .arg(i + 1)
+                        .arg(n)
+                        .arg(QString::fromStdString(reader.fileName(i)))
+                        .arg(state)
+                        .arg(t.center.x, 0, 'f', 0)
+                        .arg(t.center.y, 0, 'f', 0)
+                        .arg(t.radius, 0, 'f', 0));
+                if (t.reacquired) {
+                    emit reacquired(i, t.predictedBefore);
+                    AppLog::warn(QStringLiteral("re-adquirido en la foto %1 tras %2 supuestas")
+                                     .arg(i + 1)
+                                     .arg(t.predictedBefore));
+                }
                 if (locked)
                     return;
                 const int k = static_cast<int>(i) * 5;
@@ -73,11 +95,12 @@ public:
                 res[k + 2] = t.radius;
                 res[k + 3] = static_cast<double>(static_cast<int>(t.status));
                 res[k + 4] = t.predicted ? 1.0 : 0.0;
-                if (t.reacquired)
-                    emit reacquired(i, t.predictedBefore);
             } else {
                 if (locked)
                     return;
+                AppLog::warn(QStringLiteral("no se pudo leer la foto %1 · %2")
+                                 .arg(i + 1)
+                                 .arg(QString::fromStdString(reader.fileName(i))));
                 const int k = static_cast<int>(i) * 5;
                 res[k + 3] = static_cast<double>(static_cast<int>(TrackStatus::LOST));
                 res[k + 4] = 1.0;
@@ -120,6 +143,8 @@ signals:
     // El disco volvió a confirmarse en la foto `index` tras `predictedBefore`
     // fotos "supuestas" (re-adquisición tras pérdida/salto).
     void reacquired(int64_t index, int predictedBefore);
+    // La foto `index` acaba de procesarse (para mostrar el nombre en la UI).
+    void photoProcessed(int64_t index);
 
 private:
     QStringList paths_;

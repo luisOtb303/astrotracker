@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 
+#include "common/AppLog.h"
 #include "ui/PhotoPanel.h"
 #include "ui/VideoView.h"
 #include "video/IVideoReader.h"
@@ -8,14 +9,19 @@
 #include "export/PipelineWorker.h"
 
 #include <QAction>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QDockWidget>
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QDir>
 #include <QFileInfo>
 #include <QProgressBar>
@@ -60,6 +66,15 @@ void MainWindow::setupUi()
     });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Salir"), this, &QWidget::close);
+
+    QMenu* viewMenu = menuBar()->addMenu(tr("&Ver"));
+    logDockAction_ = viewMenu->addAction(tr("&Salida"));
+    logDockAction_->setCheckable(true);
+    logDockAction_->setChecked(true);
+    connect(logDockAction_, &QAction::toggled, this, [this](bool on) {
+        if (logDock_)
+            logDock_->setVisible(on);
+    });
 
     QToolBar* tb = addToolBar(tr("Reproducción"));
     tb->setMovable(false);
@@ -135,6 +150,34 @@ void MainWindow::setupUi()
     progressBar_->setVisible(false);
     statusBar()->addPermanentWidget(progressBar_);
     statusBar()->showMessage(tr("Abrir un vídeo o una secuencia de fotos para empezar"));
+
+    logDock_ = new QDockWidget(tr("Salida"), this);
+    logDock_->setObjectName(QStringLiteral("logDock"));
+    logDock_->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::RightDockWidgetArea);
+    auto* logWidget = new QWidget(logDock_);
+    auto* logLay = new QVBoxLayout(logWidget);
+    logLay->setContentsMargins(4, 2, 4, 2);
+    logLay->setSpacing(2);
+    auto* logBar = new QHBoxLayout();
+    debugCheck_ = new QCheckBox(tr("Depuración"), logWidget);
+    debugCheck_->setToolTip(tr("Mostrar líneas de depuración en la salida"));
+    auto* clearBtn = new QPushButton(tr("Vaciar"), logWidget);
+    connect(clearBtn, &QPushButton::clicked, this, [this] { logView_->clear(); });
+    logBar->addWidget(debugCheck_);
+    logBar->addWidget(clearBtn);
+    logBar->addStretch(1);
+    logLay->addLayout(logBar);
+    logView_ = new QPlainTextEdit(logWidget);
+    logView_->setReadOnly(true);
+    logView_->setMaximumBlockCount(2000);
+    logView_->setLineWrapMode(QPlainTextEdit::NoWrap);
+    logView_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    logLay->addWidget(logView_, 1);
+    logDock_->setWidget(logWidget);
+    addDockWidget(Qt::BottomDockWidgetArea, logDock_);
+    resizeDocks({logDock_}, {160}, Qt::Vertical);
+
+    connect(&AppLog::instance(), &AppLog::message, this, &MainWindow::onLogMessage);
 
     connect(slider_, &QSlider::valueChanged, this, [this](int ms) {
         if (!reader_ || ms == currentUs_ / 1000)
@@ -513,6 +556,37 @@ void MainWindow::onWorkerFinished()
     setBusy(false);
     progressBar_->setVisible(false);
     updateStabilizationUi();
+}
+
+void MainWindow::onLogMessage(int level, const QString& text)
+{
+    if (level == AppLog::Debug && debugCheck_ && !debugCheck_->isChecked())
+        return;
+    QString color;
+    QString tag;
+    switch (level) {
+    case AppLog::Error:
+        color = QStringLiteral("#c00");
+        tag = tr("[error]");
+        break;
+    case AppLog::Warn:
+        color = QStringLiteral("#a06000");
+        tag = tr("[aviso]");
+        break;
+    case AppLog::Debug:
+        color = QStringLiteral("#888");
+        tag = tr("[debug]");
+        break;
+    default:
+        color = QStringLiteral("#222");
+        break;
+    }
+    QString line = tag.isEmpty() ? text : tag + QStringLiteral(" ") + text;
+    line.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
+    line.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
+    line.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
+    logView_->appendHtml(QStringLiteral("<span style=\"color:%1\">%2</span>")
+                             .arg(color, line));
 }
 
 void MainWindow::updateStabilizationUi()

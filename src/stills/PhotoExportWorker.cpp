@@ -1,5 +1,6 @@
 #include "stills/PhotoExportWorker.h"
 
+#include "common/AppLog.h"
 #include "processing/BorderHandler.h"
 #include "video/FFmpegVideoWriter.h"
 
@@ -88,6 +89,15 @@ void PhotoExportWorker::run()
     }
 
     const bool toVideo = settings_.format == Format::Mp4;
+    const QString outDesc = toVideo ? settings_.outFile
+                                    : QDir(settings_.outDir).filePath(
+                                          QStringLiteral("centrada_0000.%1")
+                                              .arg(settings_.format == Format::Png ? QStringLiteral("png")
+                                                                                   : QStringLiteral("jpg")));
+    AppLog::info(QStringLiteral("Exportando %1 fotos como %2 → %3")
+                     .arg(n)
+                     .arg(toVideo ? QStringLiteral("MP4") : QStringLiteral("imágenes"))
+                     .arg(outDesc));
     QSize canvas = canvasOf(settings_.resolution);
     if (toVideo && canvas.isEmpty()) {
         // Vídeo sin lienzo estándar: se fija el tamaño de la primera foto para
@@ -121,17 +131,30 @@ void PhotoExportWorker::run()
         if (stop_.load())
             break;
 
+        emit photoProcessed(i);
+        const bool selected =
+            selection_.empty() || (i < static_cast<int64_t>(selection_.size()) &&
+                                   selection_[static_cast<size_t>(i)]);
+        if (!selected)
+            continue;
+        AppLog::info(QStringLiteral("procesando %1 → centrando")
+                         .arg(QString::fromStdString(reader.fileName(i))));
+
         cv::Mat work;
         double scale = 1.0;
         if (settings_.resolution == Resolution::Original) {
-            if (!reader.readFullRes(i, work))
+            if (!reader.readFullRes(i, work)) {
+                AppLog::warn(QStringLiteral("no se pudo leer la foto %1").arg(i + 1));
                 continue;
+            }
             work = toBgr8(work);
             const double nativeMax = std::max(work.cols, work.rows);
             scale = (analysisDim_ > 0 && nativeMax > 0) ? nativeMax / analysisDim_ : 1.0;
         } else {
-            if (!reader.readAt(i, work, analysisDim_))
+            if (!reader.readAt(i, work, analysisDim_)) {
+                AppLog::warn(QStringLiteral("no se pudo leer la foto %1").arg(i + 1));
                 continue;
+            }
         }
 
         // Centrado igual que el visor; las fotos sin resultado válido se
@@ -150,6 +173,7 @@ void PhotoExportWorker::run()
         if (toVideo) {
             if (writer->write(out))
                 ++written;
+            AppLog::info(QStringLiteral("  frame %1/%2 → vídeo").arg(i + 1).arg(n));
         } else {
             const QString name = QStringLiteral("centrada_%1.%2")
                                      .arg(static_cast<long long>(i), 4, 10, QLatin1Char('0'))
@@ -161,6 +185,7 @@ void PhotoExportWorker::run()
                                                 : std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 95};
             if (cv::imwrite(path.toStdString(), out, params))
                 ++written;
+            AppLog::info(QStringLiteral("  escrito %1").arg(path));
         }
 
         ++done;
@@ -173,6 +198,8 @@ void PhotoExportWorker::run()
     }
 
     const bool stopped = stop_.load();
+    if (written > 0)
+        AppLog::info(QStringLiteral("Exportación finalizada: %1 fotos").arg(written));
     emit finished(!stopped, stopped ? QStringLiteral("Exportación detenida") : QString(),
                   written);
 }

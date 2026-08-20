@@ -51,6 +51,7 @@ add_executable(astrotracker WIN32
   src/processing/BorderHandler.h
   src/processing/BorderHandler.cpp
   src/processing/FrameTransformer.h
+  src/common/AppLog.h
   src/processing/Pipeline.h
   src/processing/Pipeline.cpp
   src/export/ExportJob.h
@@ -65,6 +66,8 @@ add_executable(astrotracker WIN32
   src/raw/RawDecoder.cpp
   src/ui/PhotoPanel.h
   src/ui/PhotoPanel.cpp
+  src/ui/PhotoFilmstrip.h
+  src/ui/PhotoFilmstrip.cpp
 )
 
 target_include_directories(astrotracker PRIVATE src)
