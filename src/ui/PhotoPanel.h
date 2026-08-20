@@ -16,6 +16,7 @@ class QListWidgetItem;
 class QSlider;
 class VideoView;
 class PhotoTrackWorker;
+class PhotoExportWorker;
 
 // Pestaña "Fotos": abre una secuencia de fotos (JPG/PNG/TIFF/BMP y RAW CR2/CR3)
 // y permite sembrar un círculo (posición supuesta del disco), seguir la
@@ -53,12 +54,15 @@ private slots:
     void onRoiSelected(const QRect& rect);
     void onCircleSelected(const QPointF& center, double radius);
     void onFitDisc();
+    void onLockToggle(bool locked);
+    void startExport();
     void setDrawModeCircle(bool circle);
     void runTracking();
     void stopTracking();
     void onWorkerProgress(int done, int total);
     void onWorkerReacquired(int64_t index, int predictedBefore);
     void onWorkerFinished(bool ok, const QString& error, const QVector<double>& results);
+    void onExportFinished(bool ok, const QString& error, int frames);
 
 private:
     void openPaths(const QStringList& paths);
@@ -93,24 +97,20 @@ private:
     QAction* exportAction_ = nullptr;
     QAction* circleModeAction_ = nullptr;
     QAction* stopAction_ = nullptr;
-    QAction* autoAction_ = nullptr;
+    QAction* lockAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
 
     bool drawCircleMode_ = true;
     bool trackingBusy_ = false;
-    // Re-seguimiento local: al editar un círculo sobre una foto ya analizada,
-    // solo se vuelve a seguir desde ella hacia delante (sin recalcular todas).
-    bool reseedMode_ = false;
-    int64_t reseedStart_ = -1;
-    // Modo "Auto": al editar un círculo re-sigue desde esa foto y mantiene el
-    // seguimiento activo tras una ejecución (persistible en QSettings).
-    bool autoFollow_ = true;
+    // Fotos bloqueadas: "Calcular automáticamente" no modifica su círculo.
+    std::vector<bool> locked_;
     CircleF seedCircle_;
     bool hasSeedCircle_ = false;
     int64_t seedIndex_ = 0;
     std::vector<DiscTrack> tracks_;
     bool analyzed_ = false;
     PhotoTrackWorker* worker_ = nullptr;
+    PhotoExportWorker* exportWorker_ = nullptr;
 
     int64_t current_ = 0;
     int displayMaxDim_ = 1600;

@@ -21,14 +21,14 @@ class PhotoTrackWorker : public QThread
 public:
     PhotoTrackWorker(const QStringList& paths, const CircleF& seed, int64_t seedIndex,
                      int analysisDim, const DiscTrackerParams& params,
-                     bool forwardOnly = false, QObject* parent = nullptr)
+                     const std::vector<bool>& locked = {}, QObject* parent = nullptr)
         : QThread(parent)
         , paths_(paths)
         , seed_(seed)
         , seedIndex_(seedIndex)
         , analysisDim_(analysisDim)
         , params_(params)
-        , forwardOnly_(forwardOnly)
+        , locked_(locked)
     {
     }
 
@@ -58,9 +58,15 @@ public:
         const int64_t start = std::min(std::max<int64_t>(seedIndex_, 0), n - 1);
 
         const auto trackOne = [this, &reader, &res](int64_t i, DiscTracker& tracker) {
+            // Fotos bloqueadas: se siguen procesando (la cadena del tracker
+            // avanza para mantener continuidad) pero no se sobrescribe su
+            // resultado; la UI conserva el valor bloqueado.
+            const bool locked = locked_.size() > static_cast<size_t>(i) && locked_[i];
             cv::Mat frame;
             if (reader.readAt(i, frame, analysisDim_)) {
                 const DiscTrack t = tracker.track(frame);
+                if (locked)
+                    return;
                 const int k = static_cast<int>(i) * 5;
                 res[k] = t.center.x;
                 res[k + 1] = t.center.y;
@@ -70,6 +76,8 @@ public:
                 if (t.reacquired)
                     emit reacquired(i, t.predictedBefore);
             } else {
+                if (locked)
+                    return;
                 const int k = static_cast<int>(i) * 5;
                 res[k + 3] = static_cast<double>(static_cast<int>(TrackStatus::LOST));
                 res[k + 4] = 1.0;
@@ -92,9 +100,9 @@ public:
             emitProgress();
         }
 
-        // Pasada hacia atrás desde la semilla (solo en el seguimiento completo;
-        // una re-siembra puntual no retrocede: las fotos anteriores ya están OK).
-        if (!forwardOnly_) {
+        // Pasada hacia atrás desde la semilla: el seguimiento completo recorre
+        // toda la secuencia en ambas direcciones.
+        {
             DiscTracker backward(params_);
             backward.init(seed_.center, seed_.radius);
             for (int64_t i = start - 1; i >= 0 && !stop_.load(); --i) {
@@ -119,6 +127,6 @@ private:
     int64_t seedIndex_ = 0;
     int analysisDim_ = 0;
     DiscTrackerParams params_;
-    bool forwardOnly_ = false;
+    std::vector<bool> locked_;
     std::atomic<bool> stop_{false};
 };

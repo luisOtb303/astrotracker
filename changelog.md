@@ -23,18 +23,25 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   blob, blob simétrico) y elige el que muestra el **limbo radial más nítido**;
   así el círculo rojo queda centrado en el disco real aunque el Sol/Luna esté
   parcialmente oculto o la fase cambie de forma entre fotos.
-- Fase 6 (M3) — **Botón "Ajustar disco"** en el modo Fotos: detecta el disco en
-  la foto actual (barrido de radio + arco visible) y re-siembra el seguimiento
-  desde ahí, sin dibujar el círculo a mano.
-- Fase 6 (M3) — **Re-seguimiento local en el modo "Fotos"**: al mover el
-  círculo en una foto ya analizada solo se vuelve a seguir **desde esa foto
-  hacia delante** (no se recalcula toda la secuencia), y el filmstrip etiqueta
-  cada miniatura como **válida / supuesta / dudosa** con el color del estado.
-- Fase 6 (M3) — **Modo "Auto" conmutable** en la barra de Fotos: activo
-  (por defecto), editar un círculo re-sigue desde esa foto y el seguimiento
-  queda disponible; desactivado, el seguimiento automático **se desarma tras
-  ejecutarse una vez** (botón deshabilitado) hasta que el usuario lo vuelva a
-  activar. El estado se persiste en `QSettings`.
+- Fase 6 (M3) — **"Ajustar fotograma"** en el modo Fotos: detecta el disco
+  **solo en la foto actual** (barrido de radio + arco visible) y ajusta el
+  círculo, sin tocar el resto de la secuencia.
+- Fase 6 (M3) — **Botones del modo "Fotos" simplificados**: **"Calcular
+  automáticamente"** recorre **todas las fotos** desde el círculo sembrado;
+  **"Bloquear fotograma"** fija la foto actual para que el cálculo automático no
+  la modifique (etiqueta azul "bloqueada" en el filmstrip). La edición del
+  círculo sobre una foto ya analizada es **siempre manual** (solo actualiza esa
+  foto); se elimina el modo "Auto" conmutable y el re-seguido automático.
+- Fase 6 — **Exportación de las fotos centradas** (`stills/PhotoExportWorker`):
+  el botón **"Exportar centradas..."** ofrece **Fotos JPG / Fotos PNG** (carpeta
+  `centrada_0000.jpg`…) o **Vídeo MP4** (H.264, FPS configurable libre con
+  presets 5/10/24/30, por defecto 10), en resolución **Original**, la del visor
+  (1600 px) o un estándar de vídeo (**HD, FHD, 2K, 4K**, con relleno negro para
+  mantener la relación de aspecto). Las fotos sin resultado válido se exportan
+  igualmente sin desplazar (regla: nunca descartar frames). RAW a 16 bits se
+  convierte a 8 bits en la salida.
+- Fase 6 (M3) — El filmstrip etiqueta cada miniatura como **válida /
+  supuesta / dudosa** con el color del estado.
 - Fase 6 — **Diagnóstico sobre las fotos del eclipse reales**: `tests/test_eclipse`
   es un harness opcional (no falla, solo informa) que corre el motor contra los
   CR2 de `testdata/eclipse/` y escribe overlays (verde = semilla/Otsu, rojo =

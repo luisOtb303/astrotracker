@@ -33,17 +33,18 @@ pero resolviendo un problema que PIPP no cubre bien.
   estado de tracking superpuestos sobre el vídeo.
 - **Modo "Fotos"**: abre una secuencia de fotos (JPG/PNG/TIFF/BMP y
   **RAW CR2/CR3, DNG, NEF, ARW… vía LibRaw**), permite **dibujar el círculo de
-  la posición del disco** (directo o inscrito en un recuadro) o **ajustarlo
-  automáticamente** ("Ajustar disco": barrido de radio por el arco visible, para
-  fases parciales, crecientes y corona) y **seguir la
-  secuencia foto a foto**: el visor "Centrado" muestra cada foto desplazada
-  para que el Sol/Luna quede centrado, con el círculo sólido (válido) o
-  discontinuo (supuesto) cuando el objeto está oculto por nubes o el horizonte.
-  El filmstrip etiqueta cada miniatura (válida/supuesta/dudosa) según el
-  resultado; mover el círculo en una foto re-sigue **solo desde esa foto hacia
-  delante** (no recalcula toda la secuencia); el botón **Auto** mantiene ese
-  re-seguimiento activo o, desactivado, desarma el seguimiento tras ejecutarse
-  una vez.
+  la posición del disco** (directo o inscrito en un recuadro) o **ajustarlo en
+  la foto actual** ("Ajustar fotograma": barrido de radio por el arco visible,
+  para fases parciales, crecientes y corona). **"Calcular automáticamente"**
+  sigue el disco en **todas** las fotos desde el círculo sembrado; el visor
+  "Centrado" muestra cada foto desplazada para que el Sol/Luna quede centrado,
+  con el círculo sólido (válido) o discontinuo (supuesto) cuando el objeto está
+  oculto. El filmstrip etiqueta cada miniatura (**válida/supuesta/dudosa**);
+  editar un círculo es **siempre manual** (solo esa foto) y **"Bloquear
+  fotograma"** fija una foto para que el cálculo automático no la modifique.
+  **"Exportar centradas..."** guarda el resultado como **fotos JPG/PNG** o
+  **vídeo MP4** (FPS configurable, resolución original / visor / HD / FHD /
+  2K / 4K).
 
 ## Uso (flujo típico)
 
