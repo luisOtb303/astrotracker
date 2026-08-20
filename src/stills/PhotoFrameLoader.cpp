@@ -17,6 +17,7 @@ PhotoFrameLoader::PhotoFrameLoader(const QStringList& paths, int maxDim, QObject
 void PhotoFrameLoader::requestLoad(int64_t index)
 {
     pending_.store(index);
+    requestSeq_.fetch_add(1);
     cv_.notify_all();
 }
 
@@ -38,17 +39,26 @@ void PhotoFrameLoader::run()
     if (!reader.open(paths))
         return;
 
-    int64_t last = -1;
+    int64_t lastSeq = 0;
+    int64_t cachedIndex = -1;
+    cv::Mat cached;
     std::unique_lock<std::mutex> lock(mutex_);
     while (true) {
-        cv_.wait(lock, [&] { return stop_.load() || pending_.load() != last; });
+        cv_.wait(lock, [&] { return stop_.load() || requestSeq_.load() != lastSeq; });
         if (stop_.load())
             break;
-        last = pending_.load();
+        lastSeq = requestSeq_.load();
+        const int64_t idx = pending_.load();
         lock.unlock();
-        cv::Mat frame;
-        if (reader.readAt(last, frame, maxDim_) && !frame.empty())
-            emit frameReady(last, frame);
+        if (idx != cachedIndex || cached.empty()) {
+            cv::Mat frame;
+            if (reader.readAt(idx, frame, maxDim_) && !frame.empty()) {
+                cached = frame;
+                cachedIndex = idx;
+            }
+        }
+        if (idx == cachedIndex && !cached.empty())
+            emit frameReady(idx, cached);
         lock.lock();
     }
 }

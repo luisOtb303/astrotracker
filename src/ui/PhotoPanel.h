@@ -113,6 +113,10 @@ private:
 
     bool drawCircleMode_ = true;
     bool trackingBusy_ = false;
+    // Mientras se decodifica la foto actual, la edición del círculo/ROI está
+    // deshabilitada para no capturar coordenadas de la miniatura (espacio
+    // equivocado); solo se edita sobre el frame a resolución completa.
+    bool loadingView_ = false;
     // Fotos bloqueadas: "Calcular automáticamente" no modifica su círculo.
     std::vector<bool> locked_;
     // Fotos corregidas a mano: el recálculo automático tampoco las modifica.

@@ -78,6 +78,19 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   CR2 de `testdata/eclipse/` y escribe overlays (verde = semilla/Otsu, rojo =
   seguido) en `<carpeta>/_props`, para revisión visual del seguimiento.
 
+### Fixed
+
+- Fase 6 — **Edición del círculo tras la carga asíncrona**: al re-navegar a una
+  foto ya cargada, el loader no volvía a entregarla (solo emitía cuando el
+  índice pedido cambiaba) y el visor se quedaba atascado en la miniatura con
+  "Abriendo foto…"; además, editar el círculo sobre esa miniatura guardaba las
+  coordenadas en espacio de miniatura (240 px) como si fueran del análisis
+  (1600 px), encogiendo el círculo hacia la esquina superior izquierda. Ahora
+  el loader despierta por contador de peticiones y cachea el último frame
+  (pedir la misma foto la re-entrega al instante) y la edición del círculo/ROI
+  queda **deshabilitada mientras se carga** (solo se edita sobre el frame a
+  resolución completa).
+
 ## [0.1.0] - 2026-08-19
 
 ### Changed

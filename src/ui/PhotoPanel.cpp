@@ -322,6 +322,7 @@ void PhotoPanel::clearSession()
     tracks_.clear();
     analyzed_ = false;
     locked_.clear();
+    loadingView_ = false;
     updatingBadges_ = false;
     if (lockAction_)
         lockAction_->setChecked(false);
@@ -487,6 +488,8 @@ void PhotoPanel::showNext()
 
 void PhotoPanel::showCurrentSync()
 {
+    loadingView_ = false;
+    applyViewModes();
     cv::Mat frame;
     if (!reader_.readAt(current_, frame, displayMaxDim_)) {
         view_->setFrame(cv::Mat());
@@ -507,7 +510,9 @@ void PhotoPanel::showCurrent()
     }
 
     // Mientras se decodifica el frame (los RAW tardan) se muestra la miniatura
-    // con un indicador "Abriendo foto…".
+    // con un indicador "Abriendo foto…" y la edición queda deshabilitada.
+    loadingView_ = true;
+    applyViewModes();
     const double s = displayMaxDim_ > 0 ? static_cast<double>(thumbMaxDim_) / displayMaxDim_ : 1.0;
     cv::Mat thumb;
     if (current_ < static_cast<int64_t>(baseThumbs_.size()))
@@ -720,8 +725,8 @@ void PhotoPanel::onLockToggle(bool locked)
 
 void PhotoPanel::applyViewModes()
 {
-    view_->setCircleEnabled(drawCircleMode_ && !trackingBusy_);
-    view_->setRoiEnabled(!drawCircleMode_ && !trackingBusy_);
+    view_->setCircleEnabled(drawCircleMode_ && !trackingBusy_ && !loadingView_);
+    view_->setRoiEnabled(!drawCircleMode_ && !trackingBusy_ && !loadingView_);
 }
 
 void PhotoPanel::onFitDisc()
@@ -1051,6 +1056,8 @@ void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
 {
     if (index != current_ || frame.empty())
         return;
+    loadingView_ = false;
+    applyViewModes();
     view_->setLoading(false);
     resultView_->setLoading(false);
     view_->setFrame(frame);
