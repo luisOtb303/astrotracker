@@ -226,3 +226,38 @@ target_link_libraries(test_eclipse PRIVATE ${OpenCV_LIBS} libraw)
 if(EXISTS ${CMAKE_SOURCE_DIR}/testdata/eclipse)
   add_test(NAME test_eclipse COMMAND test_eclipse)
 endif()
+
+# Regresión del centrado en la exportación de fotos: JPG y MP4 con fotogramas
+# intermedios deben dejar el disco en el centro del frame.
+
+add_executable(test_export test_export/main.cpp
+  ../src/common/Frame.h
+  ../src/common/AppLog.h
+  ../src/video/IVideoReader.h
+  ../src/video/FFmpegVideoReader.h
+  ../src/video/FFmpegVideoReader.cpp
+  ../src/video/IVideoWriter.h
+  ../src/video/FFmpegVideoWriter.h
+  ../src/video/FFmpegVideoWriter.cpp
+  ../src/processing/BorderHandler.h
+  ../src/processing/BorderHandler.cpp
+  ../src/stills/PhotoExportWorker.h
+  ../src/stills/PhotoExportWorker.cpp
+  ../src/stills/PhotoSequenceReader.h
+  ../src/stills/PhotoSequenceReader.cpp
+  ../src/raw/RawDecoder.h
+  ../src/raw/RawDecoder.cpp
+  ../src/motion/TrackStatus.h
+  ../src/motion/MotionModel.h
+  ../src/motion/Kalman.h
+  ../src/tracking/DiscTracker.h)
+
+target_include_directories(test_export PRIVATE ../src)
+target_compile_definitions(test_export PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_export PRIVATE
+  Qt6::Core
+  ${OpenCV_LIBS}
+  libraw
+  FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale)
+
+add_test(NAME test_export COMMAND test_export)

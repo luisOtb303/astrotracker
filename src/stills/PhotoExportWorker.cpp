@@ -142,8 +142,6 @@ void PhotoExportWorker::run()
     double refMean = 0.0;
     bool haveRef = false;
     cv::Mat prevOut;
-    cv::Point2f prevCenter(0.f, 0.f);
-    float prevRadius = 0.f;
     bool havePrev = false;
     int done = 0;
     int written = 0;
@@ -206,31 +204,15 @@ void PhotoExportWorker::run()
 
         if (toVideo) {
             // Transiciones suavizadas: fotogramas intermedios entre esta foto y
-            // la anterior. Si ambas tienen centro válido se hace un morph con
-            // desplazamiento (el fondo se desliza en vez de saltar y el disco
-            // queda centrado por construcción); si no, fundido cruzado plano.
+            // la anterior, como fundido cruzado de los dos frames ya centrados
+            // (el disco queda en el centro en todo momento; solo el fondo se
+            // desliza).
             if (havePrev && interp > 0) {
-                const cv::Point2f delta(prevCenter.x - center.x, prevCenter.y - center.y);
-                const bool morph = prevRadius > 0.f && radius > 0.f;
                 for (int j = 1; j <= interp; ++j) {
                     const double t = static_cast<double>(j) / (interp + 1);
-                    const cv::Mat a = morph
-                                          ? BorderHandler::apply(
-                                                prevOut,
-                                                {static_cast<float>(t * delta.x),
-                                                 static_cast<float>(t * delta.y)},
-                                                mode)
-                                          : prevOut;
-                    const cv::Mat b = morph
-                                          ? BorderHandler::apply(
-                                                out,
-                                                {static_cast<float>(-(1.0 - t) * delta.x),
-                                                 static_cast<float>(-(1.0 - t) * delta.y)},
-                                                mode)
-                                          : out;
                     const double u = t * t * (3.0 - 2.0 * t); // smoothstep
                     cv::Mat f;
-                    cv::addWeighted(a, 1.0 - u, b, u, 0.0, f);
+                    cv::addWeighted(prevOut, 1.0 - u, out, u, 0.0, f);
                     f = fitToCanvas(f, canvas);
                     if (writer->write(f))
                         ++written;
@@ -256,8 +238,6 @@ void PhotoExportWorker::run()
         }
 
         prevOut = out;
-        prevCenter = center;
-        prevRadius = radius;
         havePrev = true;
 
         ++done;

@@ -67,10 +67,10 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 - Fase 6 — **Suavizado de transiciones en la exportación MP4**: opción en el
   diálogo "Exportar centradas..." (solo vídeo) con **fotogramas intermedios**
   por par de fotos (0–4, por defecto 2) y **normalización de brillo** (por
-  defecto activada) que evita el parpadeo entre tomas. Con ambas fotos válidas
-  se hace un **morph con desplazamiento** (el fondo se desliza y el disco queda
-  centrado por construcción); si falta el centro, fundido cruzado plano. Total
-  ≈ N + (N−1)·intermedios fotogramas al FPS elegido.
+  defecto activada) que evita el parpadeo entre tomas. Los intermedios son un
+  **fundido cruzado de los frames ya centrados** (el disco queda en el centro
+  en todo momento; solo el fondo se desliza). Total ≈ N + (N−1)·intermedios
+  fotogramas al FPS elegido.
 - Fase 6 (M3) — El filmstrip etiqueta cada miniatura como **válida /
   supuesta / dudosa** con el color del estado.
 - Fase 6 — **Diagnóstico sobre las fotos del eclipse reales**: `tests/test_eclipse`
@@ -90,6 +90,14 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   (pedir la misma foto la re-entrega al instante) y la edición del círculo/ROI
   queda **deshabilitada mientras se carga** (solo se edita sobre el frame a
   resolución completa).
+- Fase 6 — **Fotogramas intermedios de la exportación MP4**: el morph desplazaba
+  los dos frames centrados en sentidos opuestos para alinear el fondo, con lo
+  que en cada transición el disco aparecía **doble/desplazado** (un sol fantasma
+  separado por el desplazamiento entre fotos) y el vídeo parecía exportado desde
+  el original sin centrar. Ahora los intermedios son un **fundido cruzado de los
+  frames ya centrados** y el disco queda en el centro exacto en todos los
+  fotogramas. Regresión cubierta por `tests/test_export` (JPG y MP4 con
+  intermedios sobre fotos sintéticas con centros conocidos).
 
 ## [0.1.0] - 2026-08-19
 

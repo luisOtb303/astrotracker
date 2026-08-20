@@ -53,8 +53,8 @@ pero resolviendo un problema que PIPP no cubre bien.
   **"Exportar centradas..."** guarda el resultado como **fotos JPG/PNG** o
   **vídeo MP4** (FPS configurable, resolución original / visor / HD / FHD /
   2K / 4K), solo las fotos con la casilla marcada; el MP4 admite **suavizado de
-  transiciones** (fotogramas intermedios con morph por el desplazamiento del
-  disco + normalización de brillo para evitar el parpadeo).
+  transiciones** (fotogramas intermedios como fundido cruzado de los frames ya
+  centrados + normalización de brillo para evitar el parpadeo).
 
 ## Uso (flujo típico)
 
