@@ -59,6 +59,12 @@ void VideoView::setCircleEnabled(bool enabled)
     update();
 }
 
+void VideoView::setLoading(bool loading)
+{
+    loading_ = loading;
+    update();
+}
+
 void VideoView::setCircle(const QPointF& center, double radius, bool predicted)
 {
     circleCenter_ = center;
@@ -120,14 +126,27 @@ QPointF VideoView::toImage(const QPointF& widgetPoint) const
                    (widgetPoint.y() - ir.top()) * sy);
 }
 
+void VideoView::drawLoading(QPainter& p) const
+{
+    p.fillRect(rect(), QColor(0, 0, 0, 120));
+    p.setPen(QColor(230, 230, 230));
+    QFont f = p.font();
+    f.setPointSize(f.pointSize() + 2);
+    p.setFont(f);
+    p.drawText(rect(), Qt::AlignCenter, tr("Abriendo foto…"));
+}
+
 void VideoView::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.fillRect(rect(), QColor(20, 20, 20));
 
     if (image_.isNull()) {
-        p.setPen(QColor(140, 140, 140));
-        p.drawText(rect(), Qt::AlignCenter, tr("Abrir un vídeo para empezar"));
+        if (!loading_) {
+            p.setPen(QColor(140, 140, 140));
+            p.drawText(rect(), Qt::AlignCenter, tr("Abrir un vídeo para empezar"));
+        }
+        drawLoading(p);
         return;
     }
 

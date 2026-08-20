@@ -68,6 +68,19 @@ cv::Mat fitToCanvas(const cv::Mat& src, const QSize& canvas)
     return out;
 }
 
+// Brillo medio de la zona central (donde está el disco al centrar). Se usa
+// como referencia para normalizar el brillo y evitar el parpadeo entre fotos.
+double centralMean(const cv::Mat& bgr)
+{
+    cv::Mat g;
+    cv::cvtColor(bgr, g, cv::COLOR_BGR2GRAY);
+    const int x0 = g.cols * 3 / 10;
+    const int y0 = g.rows * 3 / 10;
+    const int w = g.cols * 4 / 10;
+    const int h = g.rows * 4 / 10;
+    return cv::mean(g(cv::Rect(x0, y0, w, h)))[0];
+}
+
 } // namespace
 
 void PhotoExportWorker::run()
@@ -124,6 +137,14 @@ void PhotoExportWorker::run()
 
     const BorderMode mode = settings_.borderMode == 1 ? BorderMode::Replicate : BorderMode::Black;
     const int total = static_cast<int>(n);
+    const int interp = toVideo ? std::max(0, settings_.interp) : 0;
+    const bool normBright = toVideo && settings_.normalizeBrightness;
+    double refMean = 0.0;
+    bool haveRef = false;
+    cv::Mat prevOut;
+    cv::Point2f prevCenter(0.f, 0.f);
+    float prevRadius = 0.f;
+    bool havePrev = false;
     int done = 0;
     int written = 0;
 
@@ -168,13 +189,59 @@ void PhotoExportWorker::run()
         }
         const cv::Point2f offset(work.cols / 2.0f - center.x, work.rows / 2.0f - center.y);
         cv::Mat out = BorderHandler::apply(work, offset, mode);
-        out = fitToCanvas(out, canvas);
+
+        // Normalización de brillo: todas las fotos al brillo medio de la
+        // primera, para que la transición no "parpadee".
+        if (normBright) {
+            const double m = centralMean(out);
+            if (!haveRef) {
+                refMean = m;
+                haveRef = true;
+            } else if (refMean > 5.0 && m > 1.0) {
+                const double k = refMean / m;
+                if (std::abs(k - 1.0) > 0.02)
+                    out = out * k;
+            }
+        }
 
         if (toVideo) {
-            if (writer->write(out))
+            // Transiciones suavizadas: fotogramas intermedios entre esta foto y
+            // la anterior. Si ambas tienen centro válido se hace un morph con
+            // desplazamiento (el fondo se desliza en vez de saltar y el disco
+            // queda centrado por construcción); si no, fundido cruzado plano.
+            if (havePrev && interp > 0) {
+                const cv::Point2f delta(prevCenter.x - center.x, prevCenter.y - center.y);
+                const bool morph = prevRadius > 0.f && radius > 0.f;
+                for (int j = 1; j <= interp; ++j) {
+                    const double t = static_cast<double>(j) / (interp + 1);
+                    const cv::Mat a = morph
+                                          ? BorderHandler::apply(
+                                                prevOut,
+                                                {static_cast<float>(t * delta.x),
+                                                 static_cast<float>(t * delta.y)},
+                                                mode)
+                                          : prevOut;
+                    const cv::Mat b = morph
+                                          ? BorderHandler::apply(
+                                                out,
+                                                {static_cast<float>(-(1.0 - t) * delta.x),
+                                                 static_cast<float>(-(1.0 - t) * delta.y)},
+                                                mode)
+                                          : out;
+                    const double u = t * t * (3.0 - 2.0 * t); // smoothstep
+                    cv::Mat f;
+                    cv::addWeighted(a, 1.0 - u, b, u, 0.0, f);
+                    f = fitToCanvas(f, canvas);
+                    if (writer->write(f))
+                        ++written;
+                }
+            }
+            cv::Mat base = fitToCanvas(out, canvas);
+            if (writer->write(base))
                 ++written;
             AppLog::info(QStringLiteral("  frame %1/%2 → vídeo").arg(i + 1).arg(n));
         } else {
+            out = fitToCanvas(out, canvas);
             const QString name = QStringLiteral("centrada_%1.%2")
                                      .arg(static_cast<long long>(i), 4, 10, QLatin1Char('0'))
                                      .arg(settings_.format == Format::Png ? QStringLiteral("png")
@@ -187,6 +254,11 @@ void PhotoExportWorker::run()
                 ++written;
             AppLog::info(QStringLiteral("  escrito %1").arg(path));
         }
+
+        prevOut = out;
+        prevCenter = center;
+        prevRadius = radius;
+        havePrev = true;
 
         ++done;
         emit progress(done, total);

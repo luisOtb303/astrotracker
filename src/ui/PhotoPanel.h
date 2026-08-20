@@ -17,6 +17,7 @@ class QSlider;
 class VideoView;
 class PhotoTrackWorker;
 class PhotoExportWorker;
+class PhotoFrameLoader;
 class PhotoFilmstrip;
 
 // Pestaña "Fotos": abre una secuencia de fotos (JPG/PNG/TIFF/BMP y RAW CR2/CR3)
@@ -60,6 +61,7 @@ private slots:
     void startNew();
     void onFilmstripChanged(QListWidgetItem* item);
     void onPhotoProcessed(int64_t index);
+    void onFrameReady(int64_t index, const cv::Mat& frame);
     void setDrawModeCircle(bool circle);
     void runTracking();
     void stopTracking();
@@ -82,6 +84,10 @@ private:
     void setTrackingBusy(bool busy);
     void clearSession();
     void updateFilmstripBadges();
+    void refreshThumbnailCircles();
+    void showCurrentSync();
+    void ensureLoader();
+    void updateViewerCircles(const cv::Mat& frame);
 
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
@@ -109,6 +115,11 @@ private:
     bool trackingBusy_ = false;
     // Fotos bloqueadas: "Calcular automáticamente" no modifica su círculo.
     std::vector<bool> locked_;
+    // Fotos corregidas a mano: el recálculo automático tampoco las modifica.
+    std::vector<bool> manualFixed_;
+    // Miniaturas base del filmstrip (para el placeholder durante la carga y
+    // para dibujar encima el círculo de cada foto).
+    std::vector<cv::Mat> baseThumbs_;
     // Evita que la actualización de las etiquetas del filmstrip dispare el
     // re-sincronizado de la selección de exportación.
     bool updatingBadges_ = false;
@@ -119,6 +130,7 @@ private:
     bool analyzed_ = false;
     PhotoTrackWorker* worker_ = nullptr;
     PhotoExportWorker* exportWorker_ = nullptr;
+    PhotoFrameLoader* loader_ = nullptr;
 
     int64_t current_ = 0;
     int displayMaxDim_ = 1600;

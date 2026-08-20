@@ -60,6 +60,8 @@ add_executable(astrotracker WIN32
   src/stills/PhotoSequenceReader.h
   src/stills/PhotoSequenceReader.cpp
   src/stills/PhotoTrackWorker.h
+  src/stills/PhotoFrameLoader.h
+  src/stills/PhotoFrameLoader.cpp
   src/stills/PhotoExportWorker.h
   src/stills/PhotoExportWorker.cpp
   src/raw/RawDecoder.h

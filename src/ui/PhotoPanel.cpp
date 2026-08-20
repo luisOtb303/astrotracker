@@ -3,6 +3,7 @@
 #include "common/AppLog.h"
 #include "processing/BorderHandler.h"
 #include "stills/PhotoExportWorker.h"
+#include "stills/PhotoFrameLoader.h"
 #include "stills/PhotoTrackWorker.h"
 #include "tracking/DiscArcFit.h"
 #include "ui/PhotoFilmstrip.h"
@@ -12,12 +13,14 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QButtonGroup>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QImage>
@@ -51,6 +54,27 @@ QPixmap matToPixmap(const cv::Mat& bgr)
     const QImage img(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step),
                      QImage::Format_RGB888);
     return QPixmap::fromImage(img);
+}
+
+// Dibuja un círculo (continuo o discontinuo) sobre una miniatura BGR.
+void drawCircleOn(cv::Mat& bgr, const cv::Point2f& c, int r, const cv::Scalar& color,
+                  bool dashed)
+{
+    if (dashed) {
+        const int n = 24;
+        for (int k = 0; k < n; k += 2) {
+            const double a0 = k * 2.0 * CV_PI / n;
+            const double a1 = (k + 1) * 2.0 * CV_PI / n;
+            const cv::Point p0(static_cast<int>(c.x + r * std::cos(a0)),
+                               static_cast<int>(c.y + r * std::sin(a0)));
+            const cv::Point p1(static_cast<int>(c.x + r * std::cos(a1)),
+                               static_cast<int>(c.y + r * std::sin(a1)));
+            cv::line(bgr, p0, p1, color, 1, cv::LINE_AA);
+        }
+    } else {
+        cv::circle(bgr, cv::Point(static_cast<int>(c.x), static_cast<int>(c.y)), r, color, 1,
+                   cv::LINE_AA);
+    }
 }
 
 } // namespace
@@ -278,8 +302,14 @@ void PhotoPanel::openPaths(const QStringList& paths)
 void PhotoPanel::clearSession()
 {
     reader_.close();
+    if (loader_) {
+        loader_->shutdown();
+        loader_ = nullptr;
+    }
     current_ = 0;
     filmstrip_->clear();
+    baseThumbs_.clear();
+    manualFixed_.clear();
     view_->setFrame(cv::Mat());
     resultView_->setFrame(cv::Mat());
     view_->clearCircle();
@@ -304,7 +334,10 @@ void PhotoPanel::reloadSequence()
 {
     current_ = 0;
     filmstrip_->clear();
+    baseThumbs_.assign(static_cast<size_t>(reader_.count()), cv::Mat());
+    manualFixed_.clear();
     buildFilmstrip();
+    ensureLoader();
 
     slider_->setRange(0, static_cast<int>(reader_.count() - 1));
     slider_->setValue(0);
@@ -339,6 +372,8 @@ void PhotoPanel::buildFilmstrip()
         cv::Mat thumb;
         if (!reader_.thumbnail(i, thumb, thumbMaxDim_))
             continue;
+        if (static_cast<size_t>(i) < baseThumbs_.size())
+            baseThumbs_[static_cast<size_t>(i)] = thumb;
         auto* item = new QListWidgetItem(QIcon(matToPixmap(thumb)), QString());
         item->setToolTip(QString::fromStdString(reader_.fileName(i)));
         item->setData(Qt::UserRole, static_cast<qlonglong>(i));
@@ -386,6 +421,29 @@ void PhotoPanel::updateFilmstripBadges()
         item->setText(label);
         item->setForeground(QBrush(color));
     }
+    refreshThumbnailCircles();
+}
+
+void PhotoPanel::refreshThumbnailCircles()
+{
+    const double s = displayMaxDim_ > 0 ? static_cast<double>(thumbMaxDim_) / displayMaxDim_ : 1.0;
+    for (int i = 0; i < filmstrip_->count(); ++i) {
+        QListWidgetItem* item = filmstrip_->item(i);
+        const int64_t idx = item->data(Qt::UserRole).toLongLong();
+        if (idx < 0 || idx >= static_cast<int64_t>(baseThumbs_.size()))
+            continue;
+        cv::Mat thumb = baseThumbs_[static_cast<size_t>(idx)].clone();
+        const bool hasTrack = analyzed_ && idx < static_cast<int64_t>(tracks_.size()) &&
+                              tracks_[static_cast<size_t>(idx)].radius > 0.f;
+        if (hasTrack) {
+            const DiscTrack& t = tracks_[static_cast<size_t>(idx)];
+            const cv::Point2f c(t.center.x * static_cast<float>(s),
+                                t.center.y * static_cast<float>(s));
+            const int r = std::max(1, static_cast<int>(t.radius * static_cast<float>(s)));
+            drawCircleOn(thumb, c, r, cv::Scalar(0, 210, 0), t.predicted);
+        }
+        item->setIcon(QIcon(matToPixmap(thumb)));
+    }
 }
 
 void PhotoPanel::onItemActivated(QListWidgetItem* item)
@@ -427,7 +485,7 @@ void PhotoPanel::showNext()
     updateNavUi();
 }
 
-void PhotoPanel::showCurrent()
+void PhotoPanel::showCurrentSync()
 {
     cv::Mat frame;
     if (!reader_.readAt(current_, frame, displayMaxDim_)) {
@@ -436,7 +494,57 @@ void PhotoPanel::showCurrent()
         return;
     }
     view_->setFrame(frame);
+    updateViewerCircles(frame);
+}
 
+void PhotoPanel::showCurrent()
+{
+    if (!reader_.isOpen())
+        return;
+    if (!loader_ || !loader_->isRunning()) {
+        showCurrentSync();
+        return;
+    }
+
+    // Mientras se decodifica el frame (los RAW tardan) se muestra la miniatura
+    // con un indicador "Abriendo foto…".
+    const double s = displayMaxDim_ > 0 ? static_cast<double>(thumbMaxDim_) / displayMaxDim_ : 1.0;
+    cv::Mat thumb;
+    if (current_ < static_cast<int64_t>(baseThumbs_.size()))
+        thumb = baseThumbs_[static_cast<size_t>(current_)];
+    if (thumb.empty()) {
+        view_->setFrame(cv::Mat());
+        resultView_->setFrame(cv::Mat());
+    } else {
+        view_->setFrame(thumb);
+        resultView_->setFrame(thumb);
+    }
+    if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
+        const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
+        if (t.radius > 0.f) {
+            view_->setCircle(QPointF(t.center.x * s, t.center.y * s), t.radius * s, t.predicted);
+            resultView_->setCircle(QPointF(thumb.cols / 2.0, thumb.rows / 2.0),
+                                   t.radius * s, t.predicted);
+        } else {
+            view_->clearCircle();
+            resultView_->clearCircle();
+        }
+    } else if (hasSeedCircle_) {
+        view_->setCircle(QPointF(seedCircle_.center.x * s, seedCircle_.center.y * s),
+                         seedCircle_.radius * s, false);
+        resultView_->clearCircle();
+    } else {
+        view_->clearCircle();
+        resultView_->clearCircle();
+    }
+
+    view_->setLoading(true);
+    resultView_->setLoading(true);
+    loader_->requestLoad(current_);
+}
+
+void PhotoPanel::updateViewerCircles(const cv::Mat& frame)
+{
     if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
         const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
         if (t.radius > 0.f) {
@@ -457,6 +565,20 @@ void PhotoPanel::showCurrent()
         resultView_->setFrame(frame);
         resultView_->clearCircle();
     }
+}
+
+void PhotoPanel::ensureLoader()
+{
+    if (loader_ && loader_->isRunning())
+        return;
+    QStringList paths;
+    paths.reserve(static_cast<int>(reader_.count()));
+    for (int64_t i = 0; i < reader_.count(); ++i)
+        paths.push_back(QString::fromStdString(reader_.filePath(i)));
+    loader_ = new PhotoFrameLoader(paths, displayMaxDim_, this);
+    connect(loader_, &PhotoFrameLoader::frameReady, this, &PhotoPanel::onFrameReady);
+    connect(loader_, &QThread::finished, loader_, &QObject::deleteLater);
+    loader_->start();
 }
 
 void PhotoPanel::updateNavUi()
@@ -528,18 +650,22 @@ void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
     view_->setCircle(QPointF(center.x, center.y), radius, false);
 
     if (analyzed_ && !trackingBusy_ && current_ < static_cast<int64_t>(tracks_.size())) {
-        // Edición manual: solo se actualiza esta foto, sin relanzar nada.
+        // Edición manual: solo se actualiza esta foto, sin relanzar nada. La
+        // foto queda "fijada": el recálculo automático no la sobrescribirá.
         DiscTrack& t = tracks_[static_cast<size_t>(current_)];
         t.center = center;
         t.radius = radius;
         t.status = TrackStatus::VALID;
         t.predicted = false;
+        if (manualFixed_.size() <= static_cast<size_t>(current_))
+            manualFixed_.resize(static_cast<size_t>(current_) + 1, false);
+        manualFixed_[static_cast<size_t>(current_)] = true;
         updateFilmstripBadges();
         showCurrent();
         updateNavUi();
         emit statusMessage(
-            tr("Círculo ajustado en la foto %1. Usa \"Calcular automáticamente\" para "
-               "revisar el resto, o \"Bloquear fotograma\" para fijarla.")
+            tr("Círculo ajustado en la foto %1 (fijada: el cálculo automático ya "
+               "no la modificará).")
                 .arg(current_ + 1));
         AppLog::info(tr("Círculo ajustado manualmente en la foto %1 (%2,%3 r%4)")
                          .arg(current_ + 1)
@@ -676,6 +802,28 @@ void PhotoPanel::startExport()
     fpsCombo->setCurrentText(QStringLiteral("10"));
     lay->addWidget(fpsCombo);
 
+    auto* smoothGroup = new QGroupBox(tr("Suavizar transiciones (solo vídeo)"), &dlg);
+    auto* smoothLay = new QVBoxLayout(smoothGroup);
+    auto* interpRow = new QHBoxLayout();
+    auto* interpCombo = new QComboBox(&dlg);
+    interpCombo->addItem(tr("Sin suavizado"), 0);
+    interpCombo->addItem(tr("1 intermedio"), 1);
+    interpCombo->addItem(tr("2 intermedios"), 2);
+    interpCombo->addItem(tr("3 intermedios"), 3);
+    interpCombo->addItem(tr("4 intermedios"), 4);
+    interpCombo->setCurrentIndex(2);
+    interpCombo->setToolTip(tr("Fotogramas generados entre cada par de fotos para "
+                               "que la transición no sea brusca"));
+    interpRow->addWidget(new QLabel(tr("Fotogramas intermedios"), &dlg));
+    interpRow->addWidget(interpCombo, 1);
+    smoothLay->addLayout(interpRow);
+    auto* brightChk = new QCheckBox(tr("Normalizar brillo entre fotos"), &dlg);
+    brightChk->setChecked(true);
+    brightChk->setToolTip(tr("Escala el brillo de cada foto al de la primera para "
+                             "evitar el parpadeo entre tomas"));
+    smoothLay->addWidget(brightChk);
+    lay->addWidget(smoothGroup);
+
     auto* destLabel = new QLabel(tr("Destino"), &dlg);
     lay->addWidget(destLabel);
     auto* destRow = new QHBoxLayout();
@@ -704,7 +852,11 @@ void PhotoPanel::startExport()
         }
     };
     connect(browseBtn, &QPushButton::clicked, &dlg, chooseDest);
-    const auto updateFpsEnabled = [&]() { fpsCombo->setEnabled(mp4Radio->isChecked()); };
+    const auto updateFpsEnabled = [&]() {
+        const bool isMp4 = mp4Radio->isChecked();
+        fpsCombo->setEnabled(isMp4);
+        smoothGroup->setEnabled(isMp4);
+    };
     connect(mp4Radio, &QRadioButton::toggled, &dlg, updateFpsEnabled);
     updateFpsEnabled();
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -732,6 +884,8 @@ void PhotoPanel::startExport()
     }
     st.resolution = static_cast<PhotoExportWorker::Resolution>(resCombo->currentData().toInt());
     st.borderMode = borderCombo_->currentIndex();
+    st.interp = interpCombo->currentData().toInt();
+    st.normalizeBrightness = brightChk->isChecked();
 
     QStringList paths;
     paths.reserve(static_cast<int>(reader_.count()));
@@ -767,7 +921,13 @@ void PhotoPanel::startExport()
                          }
                          return QString();
                      }())
-                     .arg(st.format == PhotoExportWorker::Format::Mp4 ? QString::number(st.fps) : QStringLiteral("-")));
+                     .arg(st.format == PhotoExportWorker::Format::Mp4
+                              ? QStringLiteral("%1 fps, %2 intermedios%3")
+                                    .arg(QString::number(st.fps))
+                                    .arg(st.interp)
+                                    .arg(st.normalizeBrightness ? QStringLiteral(", brillo")
+                                                               : QString())
+                              : QStringLiteral("-")));
 
     exportWorker_ = new PhotoExportWorker(paths, tracks_, displayMaxDim_, st, selection, this);
     connect(exportWorker_, &PhotoExportWorker::progress, this, &PhotoPanel::onWorkerProgress);
@@ -837,8 +997,18 @@ void PhotoPanel::runTracking()
     for (int64_t i = 0; i < reader_.count(); ++i)
         paths.push_back(QString::fromStdString(reader_.filePath(i)));
 
+    // Máscara de fotos "protegidas": bloqueadas + corregidas a mano. El worker
+    // procesa la cadena para mantener la continuidad pero no sobrescribe su
+    // resultado.
+    std::vector<bool> mask = locked_;
+    if (mask.size() < manualFixed_.size())
+        mask.resize(manualFixed_.size(), false);
+    for (size_t i = 0; i < manualFixed_.size(); ++i)
+        if (manualFixed_[i])
+            mask[i] = true;
+
     worker_ = new PhotoTrackWorker(paths, seedCircle_, seedIndex_, displayMaxDim_,
-                                   DiscTrackerParams(), locked_, this);
+                                   DiscTrackerParams(), mask, this);
 
     connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
     connect(worker_, &PhotoTrackWorker::reacquired, this, &PhotoPanel::onWorkerReacquired);
@@ -877,6 +1047,16 @@ void PhotoPanel::onPhotoProcessed(int64_t index)
                            .arg(reader_.count()));
 }
 
+void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
+{
+    if (index != current_ || frame.empty())
+        return;
+    view_->setLoading(false);
+    resultView_->setLoading(false);
+    view_->setFrame(frame);
+    updateViewerCircles(frame);
+}
+
 void PhotoPanel::onFilmstripChanged(QListWidgetItem* item)
 {
     // La selección de exportación se lee en vivo de las casillas al exportar;
@@ -902,10 +1082,15 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
         tracks_.reserve(static_cast<size_t>(total));
         for (int i = 0; i < total; ++i) {
             const int at = i * stride;
-            // Fotos bloqueadas: conservan su valor anterior (el worker no escribe
-            // su resultado).
-            if (static_cast<size_t>(i) < locked_.size() && locked_[static_cast<size_t>(i)] &&
-                static_cast<size_t>(i) < old.size() && old[static_cast<size_t>(i)].radius > 0.f) {
+            // Fotos protegidas (bloqueadas o corregidas a mano): conservan su
+            // valor anterior (el worker no escribe su resultado).
+            const bool keep =
+                (static_cast<size_t>(i) < locked_.size() &&
+                 locked_[static_cast<size_t>(i)]) ||
+                (static_cast<size_t>(i) < manualFixed_.size() &&
+                 manualFixed_[static_cast<size_t>(i)]);
+            if (keep && static_cast<size_t>(i) < old.size() &&
+                old[static_cast<size_t>(i)].radius > 0.f) {
                 tracks_.push_back(old[static_cast<size_t>(i)]);
                 continue;
             }
@@ -936,26 +1121,28 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
     }
 
     if (analyzed_) {
-        int valid = 0, predicted = 0, blocked = 0;
+        int valid = 0, predicted = 0, fixed = 0;
         for (size_t i = 0; i < tracks_.size(); ++i) {
             const DiscTrack& t = tracks_[i];
-            if (i < locked_.size() && locked_[i])
-                ++blocked;
+            const bool isFixed = (i < locked_.size() && locked_[i]) ||
+                                 (i < manualFixed_.size() && manualFixed_[i]);
+            if (isFixed)
+                ++fixed;
             else if (t.predicted)
                 ++predicted;
             else if (t.status == TrackStatus::VALID)
                 ++valid;
         }
-        emit statusMessage(tr("Cálculo: %1 fotos, %2 válidas, %3 supuestas, %4 bloqueadas")
+        emit statusMessage(tr("Cálculo: %1 fotos, %2 válidas, %3 supuestas, %4 fijadas")
                                .arg(tracks_.size())
                                .arg(valid)
                                .arg(predicted)
-                               .arg(blocked));
-        AppLog::info(tr("Cálculo terminado: %1 fotos, %2 válidas, %3 supuestas, %4 bloqueadas")
+                               .arg(fixed));
+        AppLog::info(tr("Cálculo terminado: %1 fotos, %2 válidas, %3 supuestas, %4 fijadas")
                          .arg(tracks_.size())
                          .arg(valid)
                          .arg(predicted)
-                         .arg(blocked));
+                         .arg(fixed));
     } else {
         emit statusMessage(tr("El seguimiento no pudo confirmar el disco"), 0);
         AppLog::error(tr("Seguimiento sin confirmación del disco"));

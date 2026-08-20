@@ -19,6 +19,10 @@ public:
     void setRoi(const QRect& roi);
     void clearRoi();
 
+    // Muestra un indicador "Abriendo foto…" mientras se decodifica el frame en
+    // segundo plano.
+    void setLoading(bool loading);
+
     // Modo círculo: arrastrar pinta desde el centro, mover arrastra el centro
     // y el borde cambia el radio.
     void setCircleEnabled(bool enabled);
@@ -51,6 +55,7 @@ private:
     QRect toWidget(const QRect& imageRect) const;
     QPointF toWidget(const QPointF& imagePoint) const;
     QPointF toImage(const QPointF& widgetPoint) const;
+    void drawLoading(QPainter& painter) const;
 
     QImage image_;
     QPoint selStart_;
@@ -60,6 +65,7 @@ private:
     bool roiEnabled_ = true;
 
     bool circleEnabled_ = false;
+    bool loading_ = false;
     QPointF circleCenter_;   // píxeles de imagen
     double circleRadius_ = 0.0;
     bool circlePredicted_ = false;

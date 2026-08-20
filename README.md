@@ -39,17 +39,22 @@ pero resolviendo un problema que PIPP no cubre bien.
   sigue el disco en **todas** las fotos desde el círculo sembrado; el visor
   "Centrado" muestra cada foto desplazada para que el Sol/Luna quede centrado,
   con el círculo sólido (válido) o discontinuo (supuesto) cuando el objeto está
-  oculto. El filmstrip etiqueta cada miniatura (**válida/supuesta/dudosa**) y
-  cada una tiene una **casilla** para decidir qué fotos se exportan (marcada por
-  defecto); editar un círculo es **siempre manual** (solo esa foto) y
-  **"Bloquear fotograma"** fija una foto para que el cálculo automático no la
-  modifique. **"Nuevo"** empieza de nuevo (cierra la secuencia). La barra de
-  estado muestra el **nombre del archivo** durante el proceso y el panel de
-  **Salida** (dock inferior, menú Ver) registra un log detallado por foto
-  ("procesando X → centrando", resultados, avisos, debug).
+  oculto. Al navegar, la foto se **carga en segundo plano** (indicador "Abriendo
+  foto…") sin bloquear la interfaz. El filmstrip etiqueta cada miniatura
+  (**válida/supuesta/dudosa**), **dibuja el círculo del disco sobre cada
+  miniatura** (para localizar de un vistazo las fotos mal seguidas) y cada una
+  tiene una **casilla** para decidir qué fotos se exportan (marcada por
+  defecto). Editar un círculo es **siempre manual** (solo esa foto) y queda
+  **fijada**: el recálculo automático respeta tanto las fotos **bloqueadas**
+  como las **corregidas a mano**. **"Nuevo"** empieza de nuevo (cierra la
+  secuencia). La barra de estado muestra el **nombre del archivo** durante el
+  proceso y el panel de **Salida** (dock inferior, menú Ver) registra un log
+  detallado por foto ("procesando X → centrando", resultados, avisos, debug).
   **"Exportar centradas..."** guarda el resultado como **fotos JPG/PNG** o
   **vídeo MP4** (FPS configurable, resolución original / visor / HD / FHD /
-  2K / 4K), solo las fotos con la casilla marcada.
+  2K / 4K), solo las fotos con la casilla marcada; el MP4 admite **suavizado de
+  transiciones** (fotogramas intermedios con morph por el desplazamiento del
+  disco + normalización de brillo para evitar el parpadeo).
 
 ## Uso (flujo típico)
 
@@ -151,10 +156,14 @@ JPG/PNG/TIFF/BMP y RAW (**CR2/CR3 y demás formatos de LibRaw**, vendido en
 CircleEstimator, radio fijo) con **re-adquisición por plantilla y ventana de
 búsqueda adaptativa** (si el Sol/Luna salta entre fotos, se compara con el
 parche del último disco confirmado y se amplía la búsqueda hasta volver a
-localizarlo), político de oclusión "predecir con aviso visual"
-(círculo discontinuo) y corrección manual arrastrando el círculo en cualquier
-foto. Pendiente en Fase 6: exportación de la secuencia centrada (fotos y/o MP4)
-y la política "preguntar (pausa)" de oclusión.
+localizarlo), centrado por el **arco visible** (DiscArcFit, para fases
+parciales, crecientes y corona), político de oclusión "predecir con aviso
+visual" (círculo discontinuo), **carga asíncrona de fotos** sin bloquear la UI,
+**círculo por foto dibujado en las miniaturas**, correcciones manuales que el
+recálculo automático respeta, y **exportación de la secuencia centrada**
+(fotos JPG/PNG y MP4 con **suavizado de transiciones**: intermedios con morph +
+normalización de brillo). Pendiente en Fase 6: la política "preguntar (pausa)"
+de oclusión.
 
 No está fuera del alcance actual: tratamiento de exposición/curvas tipo
 darktable/lightroom (fase posterior).

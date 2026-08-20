@@ -26,9 +26,11 @@ public:
         Format format = Format::Jpg;
         Resolution resolution = Resolution::Visor;
         double fps = 10.0;
-        int borderMode = 0; // 0 = negro, 1 = réplica
-        QString outDir;     // imágenes
-        QString outFile;    // mp4
+        int borderMode = 0;      // 0 = negro, 1 = réplica
+        int interp = 2;          // fotogramas intermedios por transición (MP4)
+        bool normalizeBrightness = true; // suaviza el parpadeo entre fotos (MP4)
+        QString outDir;          // imágenes
+        QString outFile;         // mp4
     };
 
     // `selection` vacío = exportar todas; si no, solo las fotos con `true`.

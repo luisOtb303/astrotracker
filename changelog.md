@@ -52,6 +52,25 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   proceso el **nombre del archivo** además del nº de foto.
 - Fase 6 — **Botón "Nuevo"** en el modo Fotos: cierra la secuencia actual y
   limpia todos los resultados (con confirmación si hay trabajo).
+- Fase 6 — **Carga asíncrona de fotos** (`stills/PhotoFrameLoader`): al navegar
+  entre fotos (RAW incluidas) el visor muestra la miniatura con el indicador
+  **"Abriendo foto…"** mientras se decodifica en segundo plano; la UI no se
+  bloquea y las peticiones encadenadas se coalescen a la última foto pedida.
+- Fase 6 — **Círculo del disco en las miniaturas**: cada miniatura del filmstrip
+  dibuja encima el círculo del seguimiento (verde continuo = válida, discontinuo
+  = supuesta), escalado al tamaño de la miniatura, para localizar de un vistazo
+  las fotos mal seguidas.
+- Fase 6 — **Las correcciones manuales se respetan**: editar/ajustar el círculo
+  de una foto la marca como **fijada**; volver a pulsar "Calcular
+  automáticamente" ya no sobrescribe esas fotos (igual que las bloqueadas), solo
+  revisa el resto.
+- Fase 6 — **Suavizado de transiciones en la exportación MP4**: opción en el
+  diálogo "Exportar centradas..." (solo vídeo) con **fotogramas intermedios**
+  por par de fotos (0–4, por defecto 2) y **normalización de brillo** (por
+  defecto activada) que evita el parpadeo entre tomas. Con ambas fotos válidas
+  se hace un **morph con desplazamiento** (el fondo se desliza y el disco queda
+  centrado por construcción); si falta el centro, fundido cruzado plano. Total
+  ≈ N + (N−1)·intermedios fotogramas al FPS elegido.
 - Fase 6 (M3) — El filmstrip etiqueta cada miniatura como **válida /
   supuesta / dudosa** con el color del estado.
 - Fase 6 — **Diagnóstico sobre las fotos del eclipse reales**: `tests/test_eclipse`
