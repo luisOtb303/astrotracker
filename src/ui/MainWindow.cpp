@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "common/AppLog.h"
+#include "ui/AboutDialog.h"
 #include "ui/PhotoPanel.h"
 #include "ui/VideoView.h"
 #include "video/IVideoReader.h"
@@ -75,6 +76,12 @@ void MainWindow::setupUi()
         if (logDock_)
             logDock_->setVisible(on);
     });
+
+    QMenu* helpMenu = menuBar()->addMenu(tr("&Ayuda"));
+    helpMenu->addAction(tr("&Acerca de AstroTracker..."), this, &MainWindow::showAbout);
+    helpMenu->addAction(tr("&Licencias..."), this, &MainWindow::showLicenses);
+    helpMenu->addSeparator();
+    helpMenu->addAction(tr("Acerca de &Qt"), this, &MainWindow::aboutQt);
 
     QToolBar* tb = addToolBar(tr("Reproducción"));
     tb->setMovable(false);
@@ -635,4 +642,23 @@ cv::Mat MainWindow::displayFrame(const cv::Mat& src, int64_t frameIndex) const
 QString MainWindow::formatTime(int64_t us) const
 {
     return QTime(0, 0).addMSecs(static_cast<int>(us / 1000)).toString("hh:mm:ss.zzz");
+}
+
+void MainWindow::showAbout()
+{
+    AboutDialog dlg(this);
+    dlg.showTab(0);
+    dlg.exec();
+}
+
+void MainWindow::showLicenses()
+{
+    AboutDialog dlg(this);
+    dlg.showTab(1);
+    dlg.exec();
+}
+
+void MainWindow::aboutQt()
+{
+    QMessageBox::aboutQt(this);
 }

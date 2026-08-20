@@ -55,6 +55,11 @@ pero resolviendo un problema que PIPP no cubre bien.
   2K / 4K), solo las fotos con la casilla marcada; el MP4 admite **suavizado de
   transiciones** (fotogramas intermedios como fundido cruzado de los frames ya
   centrados + normalización de brillo para evitar el parpadeo).
+- **Icono y menú "Ayuda"**: icono propio en la ventana/taskbar, en el `.exe`
+  (Explorador) y en el Acerca de; **"Ayuda > Acerca de AstroTracker"** muestra
+  versión (semver desde CMake), revisión git, compilación y copyright, y
+  **"Ayuda > Licencias"** los textos completos de las licencias (GPLv3, LGPLv3,
+  Apache-2.0, GPLv2, LGPL-2.1/CDDL) embebidos como recursos.
 
 ## Uso (flujo típico)
 

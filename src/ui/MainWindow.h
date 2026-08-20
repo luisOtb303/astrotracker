@@ -54,6 +54,10 @@ private slots:
     void onWorkerFinished();
     void onLogMessage(int level, const QString& text);
 
+    void showAbout();
+    void showLicenses();
+    void aboutQt();
+
 private:
     void setupUi();
     QWidget* createVideoPage();

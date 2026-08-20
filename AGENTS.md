@@ -72,6 +72,16 @@ resources/      iconos, estilos
 - NO añadir dependencias sin verificar licencia y compatibilidad GPLv3.
 - Todo frame de salida debe conservarse (regla de negocio central del proyecto).
 - Interfaz: no bloquear el hilo de UI; procesamiento en worker thread.
+- **Versionado y "Acerca de"**: cada cambio de **minor/major** (semver) debe
+  incrementar `project(... VERSION x.y.z)` en `CMakeLists.txt` y añadir la
+  entrada correspondiente al changelog. La versión de la app y el diálogo
+  **Ayuda > Acerca de** se propagan automáticamente desde CMake
+  (`ASTROTRACKER_VERSION`, `ASTROTRACKER_GIT_REV`, `ASTROTRACKER_BUILD_TYPE`);
+  no hardcodear versiones en el código. Los parches internos no cambian la
+  versión salvo que haya release. Si cambia el autor/copyright, actualizar
+  `src/ui/AboutDialog.cpp`. Al añadir/quitar una dependencia, mantener al día
+  `THIRD_PARTY_LICENSES/index.md` y la pestaña Licencias del `AboutDialog`
+  (textos en `resources/licenses/`).
 
 ## No hacer
 

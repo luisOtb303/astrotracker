@@ -8,3 +8,13 @@ out/
 bin/
 *.log
 testdata/eclipse/
+
+# Favicon web-only de realfavicongenerator (se pueden regenerar); no son
+# entrada de build. Se versiona solo app.ico y app-icon-512.png.
+resources/favicon.zip
+resources/favicon/favicon.svg
+resources/favicon/favicon.ico
+resources/favicon/apple-touch-icon.png
+resources/favicon/favicon-96x96.png
+resources/favicon/web-app-manifest-192x192.png
+resources/favicon/site.webmanifest

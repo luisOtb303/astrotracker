@@ -9,6 +9,20 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Added
 
+- **Menú "Ayuda" y diálogo "Acerca de"** (`ui/AboutDialog`): "Ayuda > Acerca de
+  AstroTracker" muestra **versión** (semver, desde CMake), **revisión git**
+  (commit corto), **compilación** (configuración + fecha/hora de build) y
+  copyright; "Ayuda > Licencias" lista los componentes de terceros con los
+  **textos completos de las licencias** (GPLv3, LGPLv3, Apache-2.0, GPLv2,
+  LGPL-2.1, CDDL-1.0) embebidos como recursos Qt en `resources/licenses/`;
+  "Acerca de Qt" abre el diálogo estándar.
+- **Versión centralizada en CMake**: `project(... VERSION)` propaga
+  `ASTROTRACKER_VERSION`, `ASTROTRACKER_BUILD_TYPE` y `ASTROTRACKER_GIT_REV` al
+  ejecutable y al "Acerca de" (se elimina la versión hardcodeada en `main.cpp`).
+- **Icono de la aplicación**: `resources/favicon/app.ico` (multi-tamaño
+  16–256 px, regenerado desde el PNG 512) incrustado en el `.exe` (Explorador)
+  vía `resources/app.rc`, y `app-icon-512.png` como icono de ventana/taskbar
+  (`setWindowIcon`) y en el "Acerca de".
 - Fase 6 (M3) — **Re-adquisición del disco por plantilla**: cuando el Sol/Luna
   salta entre fotos más de lo que abarca la banda radial (deriva típica sin
   star tracker), el seguimiento compara cada foto contra el parche del círculo

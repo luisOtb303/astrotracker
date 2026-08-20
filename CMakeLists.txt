@@ -4,8 +4,15 @@ project(AstroTracker VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Icono del .exe: se genera app.rc a partir de la plantilla con la ruta absoluta
+# del .ico (multi-tamaño) para el compilador de recursos de MSVC.
+set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/resources/favicon/app.ico")
+string(REPLACE "\\" "/" APP_ICON_PATH "${APP_ICON_PATH}")
+configure_file(resources/app.rc.in ${CMAKE_CURRENT_BINARY_DIR}/app.rc @ONLY)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil swscale)
@@ -24,6 +31,10 @@ add_executable(astrotracker WIN32
   src/ui/VideoView.cpp
   src/ui/MainWindow.h
   src/ui/MainWindow.cpp
+  src/ui/AboutDialog.h
+  src/ui/AboutDialog.cpp
+  resources/resources.qrc
+  ${CMAKE_CURRENT_BINARY_DIR}/app.rc
   src/tracking/ITracker.h
   src/tracking/TemplateTracker.h
   src/tracking/TemplateTracker.cpp
@@ -73,7 +84,24 @@ add_executable(astrotracker WIN32
 )
 
 target_include_directories(astrotracker PRIVATE src)
-target_compile_definitions(astrotracker PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+
+# Revisión git (commit corto) para el diálogo "Acerca de"; fallback si no hay git.
+execute_process(COMMAND git rev-parse --short HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE ASTROTRACKER_GIT_REV
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET)
+if(NOT ASTROTRACKER_GIT_REV)
+  set(ASTROTRACKER_GIT_REV "unknown")
+endif()
+
+# La versión vive en `project(... VERSION)` (semver); se propaga al Acerca de y a
+# la app. La compilación usa la configuración activa ($<CONFIG>).
+target_compile_definitions(astrotracker PRIVATE
+  NOMINMAX WIN32_LEAN_AND_MEAN
+  ASTROTRACKER_VERSION="${PROJECT_VERSION}"
+  ASTROTRACKER_BUILD_TYPE="$<CONFIG>"
+  ASTROTRACKER_GIT_REV="${ASTROTRACKER_GIT_REV}")
 
 target_link_libraries(astrotracker PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets

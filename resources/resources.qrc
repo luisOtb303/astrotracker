@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/favicon">
+        <file alias="app-512.png">favicon/app-icon-512.png</file>
+    </qresource>
+    <qresource prefix="/licenses">
+        <file>licenses/apache-2.0.txt</file>
+        <file>licenses/cddl-1.0.txt</file>
+        <file>licenses/gpl-2.0.txt</file>
+        <file>licenses/gpl-3.0.txt</file>
+        <file>licenses/lgpl-2.1.txt</file>
+        <file>licenses/lgpl-3.0.txt</file>
+    </qresource>
+</RCC>
