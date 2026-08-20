@@ -102,6 +102,9 @@ cmake --build build --config Release
 
 # Tests (el ejecutable está en build/bin/Release con todas las DLLs)
 ctest --test-dir build -C Release --output-on-failure
+
+# Empaquetado portable (ZIP en build/ con exe + DLLs + licencias; solo CMake)
+cpack -C Release
 ```
 
 El build despliega automáticamente junto al ejecutable (`build/bin/Release`):

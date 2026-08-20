@@ -129,3 +129,23 @@ add_custom_command(TARGET astrotracker POST_BUILD
 
 enable_testing()
 add_subdirectory(tests)
+
+# ---- Empaquetado (CPack) ----
+# Portable ZIP generado solo con CMake (libarchive integrado, sin herramientas
+# externas): exe + DLLs (Qt/FFmpeg/OpenCV y plugins) + documentación + licencias.
+# Generar con: cmake --build build --config Release && cpack -C Release
+install(TARGETS astrotracker RUNTIME DESTINATION .)
+install(DIRECTORY "$<TARGET_FILE_DIR:astrotracker>/" DESTINATION . FILES_MATCHING PATTERN "*.dll")
+install(FILES README.md THIRD_PARTY_LICENSES/index.md DESTINATION .)
+install(DIRECTORY resources/licenses/ DESTINATION licenses)
+
+set(CPACK_PACKAGE_NAME "AstroTracker")
+set(CPACK_PACKAGE_VENDOR "AstroTracker Team")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Seguimiento y estabilización de vídeos astronómicos (Sol/Luna)")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "AstroTracker")
+set(CPACK_PACKAGE_FILE_NAME "AstroTracker-${PROJECT_VERSION}-win64")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/resources/licenses/gpl-3.0.txt")
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_VERBATIM_VARIABLES ON)
+include(CPack)
