@@ -139,6 +139,21 @@ necesario añadir rutas al `PATH` para ejecutar la app.
   desinstalación en Configuración > Aplicaciones. Requiere
   [NSIS](https://nsis.sourceforge.io) instalado (solo para compilarlo).
 
+Para regenerar todo de una vez (compilar + tests + empaquetar):
+
+```powershell
+powershell -File scripts\make-release.ps1            # o -SkipTests para omitir ctest
+```
+
+### Checklist de release
+
+1. Subir `project(... VERSION x.y.z)` en `CMakeLists.txt` (**minor** por lote
+   de features; **patch** solo-fixes; **major** para hitos grandes).
+2. Mover `[Unreleased]` a una sección nueva del `changelog.md` con fecha.
+3. Commit y **tag anotado** `vx.y.z` sobre ese commit.
+4. `powershell -File scripts\make-release.ps1` → ZIP + instalador listos para
+   publicar como GitHub Releases.
+
 Para abrir un vídeo al arrancar: `astrotracker.exe ruta\al\video.mp4`
 
 Para generar el vídeo de prueba (disco brillante que se desplaza 4 px/frame):

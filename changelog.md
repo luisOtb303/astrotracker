@@ -7,6 +7,8 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-21
+
 ### Added
 
 - **Proyectos guardables (`.atracker`)** — guardar y retomar el trabajo:

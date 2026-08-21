@@ -82,6 +82,16 @@ resources/      iconos, estilos
   `src/ui/AboutDialog.cpp`. Al añadir/quitar una dependencia, mantener al día
   `THIRD_PARTY_LICENSES/index.md` y la pestaña Licencias del `AboutDialog`
   (textos en `resources/licenses/`).
+- **Criterio de versiones**: **minor** por cada lote de features publicado
+  (0.1.0 → 0.2.0 → 0.3.0…); **patch** solo para releases de correcciones
+  (0.2.1); **major** para hitos grandes (p. ej. detector automático renovado o
+  integración de IA → candidato natural a 1.0.0).
+- **Proceso de release** (checklist): 1) bump `project(VERSION)`; 2) mover
+  `[Unreleased]` a una sección nueva del changelog con fecha; 3) commit;
+  4) tag anotado `vx.y.z` sobre ese commit (así el ejecutable lleva el rev
+  correcto); 5) regenerar artefactos con `scripts/make-release.ps1`
+  (build + ctest + `cpack -C Release`: ZIP portable + instalador NSIS).
+  El instalador requiere NSIS (`winget install NSIS.NSIS`) solo para generarlo.
 
 ## No hacer
 
