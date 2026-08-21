@@ -217,10 +217,17 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   16–256 px, regenerado desde el PNG 512) incrustado en el `.exe` (Explorador)
   vía `resources/app.rc`, y `app-icon-512.png` como icono de ventana/taskbar
   (`setWindowIcon`) y en el "Acerca de".
-- **Empaquetado portable (CPack)**: `cpack -C Release` genera
-  `AstroTracker-<versión>-win64.zip` (ejecutable + DLLs de Qt/FFmpeg/OpenCV con
-  plugins + README + `THIRD_PARTY_LICENSES` + textos de licencia) solo con CMake
-  (libarchive integrado, sin herramientas externas), listo para GitHub Releases.
+- **Empaquetado (CPack)**: `cpack -C Release` genera en `build/` dos artefactos:
+  - `AstroTracker-<versión>-win64.zip`: versión **portable** (descomprimir y
+    ejecutar) con ejecutable, DLLs de Qt/FFmpeg/OpenCV con sus plugins, README,
+    `THIRD_PARTY_LICENSES` y textos de licencia; solo necesita CMake
+    (libarchive integrado).
+  - `AstroTracker-<versión>-win64.exe`: **instalador NSIS** que instala en
+    Program Files, crea el acceso del menú Inicio y registra la desinstalación
+    en Configuración > Aplicaciones (muestra la GPLv3 en el asistente y ofrece
+    desinstalar la versión previa al actualizar). Requiere NSIS para generarlo.
+  En ambos se excluye la DLL de depuración de OpenCV (`opencv_world*d.dll`),
+  listo para publicar como GitHub Releases.
 
 ### Changed
 

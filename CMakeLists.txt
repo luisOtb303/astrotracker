@@ -131,11 +131,14 @@ enable_testing()
 add_subdirectory(tests)
 
 # ---- Empaquetado (CPack) ----
-# Portable ZIP generado solo con CMake (libarchive integrado, sin herramientas
-# externas): exe + DLLs (Qt/FFmpeg/OpenCV y plugins) + documentación + licencias.
-# Generar con: cmake --build build --config Release && cpack -C Release
+# Genera con un solo comando (cmake --build build --config Release && cpack -C
+# Release): ZIP portable (libarchive integrado, sin herramientas externas) e
+# instalador EXE (requiere NSIS). Contenido: exe + DLLs (Qt/FFmpeg/OpenCV y
+# plugins) + documentación + licencias.
 install(TARGETS astrotracker RUNTIME DESTINATION .)
-install(DIRECTORY "$<TARGET_FILE_DIR:astrotracker>/" DESTINATION . FILES_MATCHING PATTERN "*.dll")
+install(DIRECTORY "$<TARGET_FILE_DIR:astrotracker>/" DESTINATION .
+  FILES_MATCHING PATTERN "*.dll"
+  PATTERN "opencv_world*d.dll" EXCLUDE)
 install(FILES README.md THIRD_PARTY_LICENSES/index.md DESTINATION .)
 install(DIRECTORY resources/licenses/ DESTINATION licenses)
 
@@ -146,6 +149,19 @@ set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "AstroTracker")
 set(CPACK_PACKAGE_FILE_NAME "AstroTracker-${PROJECT_VERSION}-win64")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/resources/licenses/gpl-3.0.txt")
-set(CPACK_GENERATOR "ZIP")
+set(CPACK_GENERATOR "ZIP;NSIS")
+
+# Instalador NSIS: instala en Program Files, crea el acceso del menú Inicio,
+# registra la desinstalación en "Aplicaciones" y ofrece quitar la versión previa.
+set(CPACK_PACKAGE_EXECUTABLES "astrotracker" "AstroTracker")
+set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
+set(CPACK_NSIS_DISPLAY_NAME "AstroTracker")
+set(CPACK_NSIS_PACKAGE_NAME "AstroTracker")
+set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/resources/favicon/app.ico")
+set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/resources/favicon/app.ico")
+set(CPACK_NSIS_INSTALLED_ICON_NAME "astrotracker.exe")
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+
 set(CPACK_VERBATIM_VARIABLES ON)
 include(CPack)

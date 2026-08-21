@@ -103,13 +103,21 @@ cmake --build build --config Release
 # Tests (el ejecutable está en build/bin/Release con todas las DLLs)
 ctest --test-dir build -C Release --output-on-failure
 
-# Empaquetado portable (ZIP en build/ con exe + DLLs + licencias; solo CMake)
+# Empaquetado (en build/: ZIP portable + instalador EXE)
 cpack -C Release
 ```
 
 El build despliega automáticamente junto al ejecutable (`build/bin/Release`):
 Qt (`windeployqt`), DLLs de FFmpeg (`bin/*.dll`) y `opencv_world*.dll`. No es
 necesario añadir rutas al `PATH` para ejecutar la app.
+
+`cpack -C Release` genera en `build/`:
+- `AstroTracker-<versión>-win64.zip`: versión **portable** (descomprimir y
+  ejecutar), con exe, DLLs, README y licencias.
+- `AstroTracker-<versión>-win64.exe`: **instalador** (NSIS) que instala en
+  `C:\Program Files\AstroTracker`, crea el acceso del menú Inicio y registra la
+  desinstalación en Configuración > Aplicaciones. Requiere
+  [NSIS](https://nsis.sourceforge.io) instalado (solo para compilarlo).
 
 Para abrir un vídeo al arrancar: `astrotracker.exe ruta\al\video.mp4`
 
