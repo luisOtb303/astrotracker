@@ -75,6 +75,8 @@ add_executable(astrotracker WIN32
   src/stills/PhotoFrameLoader.cpp
   src/stills/PhotoExportWorker.h
   src/stills/PhotoExportWorker.cpp
+  src/stills/PhotoProject.h
+  src/stills/PhotoProject.cpp
   src/raw/RawDecoder.h
   src/raw/RawDecoder.cpp
   src/ui/PhotoPanel.h

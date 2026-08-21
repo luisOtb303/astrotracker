@@ -2,8 +2,10 @@
 
 #include "export/PipelineWorker.h"
 #include "processing/Pipeline.h"
+#include "stills/PhotoProject.h"
 
 #include <QMainWindow>
+#include <QStringList>
 #include <QVector>
 #include <memory>
 #include <vector>
@@ -35,6 +37,9 @@ public:
     // Abre un vídeo desde la línea de comandos.
     void openPath(const QString& path);
 
+protected:
+    void closeEvent(QCloseEvent* event) override;
+
 private slots:
     void openFile();
     void playPause();
@@ -54,6 +59,11 @@ private slots:
     void onWorkerFinished();
     void onLogMessage(int level, const QString& text);
 
+    // Proyecto (.atracker): abrir, guardar y guardar como (semántica clásica).
+    void openProjectDialog();
+    void saveProjectTriggered();
+    void saveProjectAsTriggered();
+
     void showAbout();
     void showLicenses();
     void aboutQt();
@@ -72,6 +82,22 @@ private:
     cv::Mat displayFrame(const cv::Mat& src, int64_t frameIndex) const;
     void launchWorker(const PipelineWorker::Request& req);
     void setBusy(bool busy);
+
+    // Gestión del proyecto: estado combinado de las pestañas Vídeo y Fotos.
+    PhotoProject collectProject() const;
+    PhotoProjectVideo collectVideo() const;
+    void applyVideo(const PhotoProjectVideo& v);
+    void closeVideo();
+    bool anyBusy() const;
+    bool hasContent() const;
+    bool saveProject(const QString& path);
+    bool saveProjectAs();
+    bool openProject(const QString& path);
+    bool confirmContinue();
+    void writeAutosave();
+    void markProjectModified();
+    void rememberProjectPath(const QString& path);
+    void refreshProjectUi();
 
     VideoView* view_ = nullptr;
     VideoView* resultView_ = nullptr;
@@ -93,6 +119,14 @@ private:
     QPlainTextEdit* logView_ = nullptr;
     QCheckBox* debugCheck_ = nullptr;
     QAction* logDockAction_ = nullptr;
+
+    // Proyecto (.atracker)
+    QAction* openProjectAction_ = nullptr;
+    QAction* saveProjectAction_ = nullptr;
+    QAction* saveProjectAsAction_ = nullptr;
+    QString projectPath_;
+    bool projectDirty_ = false;
+    QStringList recentProjects_;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;

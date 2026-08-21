@@ -115,6 +115,7 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     borderCombo_->addItem(tr("Borde réplica"));
     borderCombo_->setToolTip(tr("Relleno de los bordes al centrar el visor"));
     tb->addWidget(borderCombo_);
+    connect(borderCombo_, &QComboBox::currentIndexChanged, this, [this](int) { emit modified(); });
 
     tb->addSeparator();
     prevAction_ = tb->addAction(tr("Anterior"), this, &PhotoPanel::showPrev);
@@ -251,6 +252,8 @@ void PhotoPanel::openFolder(const QString& dir)
                              tr("La carpeta no contiene imágenes soportadas:\n%1").arg(dir));
         return;
     }
+    sourceFolder_ = QDir(dir).absolutePath();
+    sourceFiles_.clear();
     rememberFolder(dir);
     reloadSequence();
     AppLog::info(tr("Carpeta abierta: %1 (%2 fotos)").arg(dir).arg(reader_.count()));
@@ -294,6 +297,8 @@ void PhotoPanel::openPaths(const QStringList& paths)
                              tr("Ninguno de los archivos seleccionados es una imagen soportada."));
         return;
     }
+    sourceFolder_.clear();
+    sourceFiles_ = paths;
     rememberFolder(QFileInfo(paths.first()).absolutePath());
     reloadSequence();
     AppLog::info(tr("Secuencia abierta: %1 fotos").arg(paths.size()));
@@ -310,6 +315,9 @@ void PhotoPanel::clearSession()
     filmstrip_->clear();
     baseThumbs_.clear();
     manualFixed_.clear();
+    exportSelection_.clear();
+    sourceFolder_.clear();
+    sourceFiles_.clear();
     view_->setFrame(cv::Mat());
     resultView_->setFrame(cv::Mat());
     view_->clearCircle();
@@ -337,6 +345,7 @@ void PhotoPanel::reloadSequence()
     filmstrip_->clear();
     baseThumbs_.assign(static_cast<size_t>(reader_.count()), cv::Mat());
     manualFixed_.clear();
+    exportSelection_.clear();
     buildFilmstrip();
     ensureLoader();
 
@@ -366,6 +375,7 @@ void PhotoPanel::reloadSequence()
 void PhotoPanel::buildFilmstrip()
 {
     const int64_t total = reader_.count();
+    exportSelection_.assign(static_cast<size_t>(total), true);
     emit workProgress(0, static_cast<int>(total));
     emit statusMessage(tr("Generando miniaturas 0/%1...").arg(total));
 
@@ -687,6 +697,7 @@ void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
                 .arg(current_ + 1)
                 .arg(reader_.count()));
     }
+    emit modified();
 }
 
 void PhotoPanel::startNew()
@@ -717,10 +728,11 @@ void PhotoPanel::onLockToggle(bool locked)
     AppLog::info(locked ? tr("Foto %1 bloqueada").arg(current_ + 1)
                         : tr("Foto %1 desbloqueada").arg(current_ + 1));
     emit statusMessage(locked ? tr("Foto %1 bloqueada: no se modificará en el cálculo "
-                                   "automático.")
-                                    .arg(current_ + 1)
-                              : tr("Foto %1 desbloqueada.")
-                                    .arg(current_ + 1));
+                                    "automático.")
+                                     .arg(current_ + 1)
+                               : tr("Foto %1 desbloqueada.")
+                                     .arg(current_ + 1));
+    emit modified();
 }
 
 void PhotoPanel::applyViewModes()
@@ -986,6 +998,182 @@ void PhotoPanel::updateTrackingUi()
     resetAction_->setEnabled(ready);
 }
 
+bool PhotoPanel::isBusy() const
+{
+    return worker_ != nullptr || exportWorker_ != nullptr;
+}
+
+PhotoProjectPhotos PhotoPanel::collectState() const
+{
+    PhotoProjectPhotos d;
+    if (!reader_.isOpen())
+        return d;
+
+    d.active = true;
+    if (!sourceFolder_.isEmpty()) {
+        d.originType = 0;
+        d.originFolder = sourceFolder_;
+    } else {
+        d.originType = 1;
+        d.originFiles = sourceFiles_;
+    }
+    d.analysisMaxDim = displayMaxDim_;
+    d.currentIndex = static_cast<int>(current_);
+    d.hasSeed = hasSeedCircle_;
+    d.seedIndex = static_cast<int>(seedIndex_);
+    d.seedX = seedCircle_.center.x;
+    d.seedY = seedCircle_.center.y;
+    d.seedRadius = seedCircle_.radius;
+
+    // Resultado disperso: solo se guardan fotos con círculo o con alguna marca
+    // (bloqueada, fijada o excluida de la exportación).
+    for (int64_t i = 0; i < reader_.count(); ++i) {
+        const size_t idx = static_cast<size_t>(i);
+        const bool hasCircle = i < static_cast<int64_t>(tracks_.size()) &&
+                               tracks_[idx].radius > 0.f;
+        const bool locked = i < static_cast<int64_t>(locked_.size()) && locked_[idx];
+        const bool manual = i < static_cast<int64_t>(manualFixed_.size()) &&
+                            manualFixed_[idx];
+        const bool exportIt =
+            i < static_cast<int64_t>(exportSelection_.size()) ? exportSelection_[idx] : true;
+        if (!hasCircle && !locked && !manual && exportIt)
+            continue;
+
+        PhotoProjectPhotoResult r;
+        r.file = QString::fromStdString(reader_.fileName(i));
+        if (hasCircle) {
+            r.x = tracks_[idx].center.x;
+            r.y = tracks_[idx].center.y;
+            r.radius = tracks_[idx].radius;
+            r.status = static_cast<int>(tracks_[idx].status);
+            r.predicted = tracks_[idx].predicted;
+        }
+        r.locked = locked;
+        r.manualFixed = manual;
+        r.exportSelected = exportIt;
+        d.results.push_back(r);
+    }
+    return d;
+}
+
+bool PhotoPanel::applyState(const PhotoProjectPhotos& data, QString* error)
+{
+    auto fail = [error](const QString& msg) {
+        if (error)
+            *error = msg;
+        return false;
+    };
+    if (worker_ || exportWorker_)
+        return fail(tr("Hay un cálculo o una exportación en curso"));
+    if (!data.active)
+        return fail(tr("El proyecto no contiene secuencia de fotos"));
+
+    // Origen: carpeta o lista de archivos. Si la carpeta guardada ya no tiene
+    // imágenes soportadas se informa y no se cambia la sesión actual.
+    if (data.originType == 1) {
+        std::vector<std::string> v;
+        v.reserve(static_cast<size_t>(data.originFiles.size()));
+        for (const QString& p : data.originFiles)
+            v.push_back(p.toStdString());
+        if (!reader_.open(v))
+            return fail(tr("Ninguno de los archivos del proyecto es una imagen "
+                           "soportada (o ya no existen)"));
+    } else {
+        if (!reader_.openFolder(data.originFolder.toStdString()))
+            return fail(tr("La carpeta del proyecto ya no contiene imágenes soportadas:\n%1")
+                            .arg(data.originFolder));
+    }
+
+    // El espacio de coordenadas de los círculos depende de maxDim: restaurarlo
+    // antes de recargar la secuencia.
+    displayMaxDim_ = data.analysisMaxDim > 0 ? data.analysisMaxDim : 1600;
+    reloadSequence();
+
+    // Restaurar resultados y marcas casilla a casilla por nombre de archivo
+    // (tolera reordenar o añadir fotos a la carpeta).
+    const int64_t total = reader_.count();
+    tracks_.assign(static_cast<size_t>(total), DiscTrack{});
+    locked_.assign(static_cast<size_t>(total), false);
+    manualFixed_.assign(static_cast<size_t>(total), false);
+
+    // Mapa foto -> item del filmstrip (por UserRole: puede haber menos items
+    // que fotos si alguna miniatura no se pudo generar).
+    std::vector<QListWidgetItem*> items(static_cast<size_t>(total), nullptr);
+    for (int k = 0; k < filmstrip_->count(); ++k) {
+        QListWidgetItem* it = filmstrip_->item(k);
+        const int64_t id = it->data(Qt::UserRole).toLongLong();
+        if (id >= 0 && id < total)
+            items[static_cast<size_t>(id)] = it;
+    }
+
+    int restored = 0;
+    for (int64_t i = 0; i < total; ++i) {
+        const size_t idx = static_cast<size_t>(i);
+        const QString name = QString::fromStdString(reader_.fileName(i));
+        const int r = data.indexOfResult(name);
+        if (r < 0)
+            continue;
+        const PhotoProjectPhotoResult& e =
+            data.results[static_cast<size_t>(r)];
+        DiscTrack& t = tracks_[idx];
+        t.center = cv::Point2f(e.x, e.y);
+        t.radius = e.radius;
+        t.status = static_cast<TrackStatus>(
+            e.status >= 0 && e.status <= 2 ? e.status : 2);
+        t.predicted = e.predicted;
+        locked_[idx] = e.locked;
+        manualFixed_[idx] = e.manualFixed;
+        if (e.radius > 0.f)
+            ++restored;
+
+        if (items[idx]) {
+            items[idx]->setCheckState(e.exportSelected ? Qt::Checked : Qt::Unchecked);
+            exportSelection_[idx] = e.exportSelected;
+        }
+    }
+    analyzed_ = restored > 0;
+
+    // Fotos del proyecto que ya no están en la secuencia actual.
+    auto inReader = [this, total](const QString& name) {
+        for (int64_t i = 0; i < total; ++i) {
+            if (QString::fromStdString(reader_.fileName(i))
+                    .compare(name, Qt::CaseInsensitive) == 0)
+                return true;
+        }
+        return false;
+    };
+    int absent = 0;
+    for (const PhotoProjectPhotoResult& e : data.results) {
+        if (!inReader(e.file))
+            ++absent;
+    }
+
+    if (data.hasSeed && data.seedIndex >= 0 && data.seedIndex < total) {
+        seedCircle_ = CircleF{cv::Point2f(data.seedX, data.seedY), data.seedRadius};
+        seedIndex_ = data.seedIndex;
+        hasSeedCircle_ = true;
+    }
+
+    current_ = std::min<int64_t>(std::max<int64_t>(data.currentIndex, 0),
+                                 std::max<int64_t>(total - 1, 0));
+
+    updateFilmstripBadges();
+    updateTrackingUi();
+    showCurrent();
+    updateNavUi();
+
+    if (absent > 0)
+        AppLog::warn(tr("%1 fotos del proyecto no están en la secuencia actual").arg(absent));
+    emit statusMessage(tr("Trabajo restaurado: %1 de %2 fotos con resultado")
+                           .arg(restored)
+                           .arg(total), 6000);
+    AppLog::info(tr("Trabajo restaurado: %1 de %2 fotos con resultado%3")
+                     .arg(restored)
+                     .arg(total)
+                     .arg(absent > 0 ? tr(", %1 ausentes").arg(absent) : QString()));
+    return true;
+}
+
 void PhotoPanel::runTracking()
 {
     if (worker_ || !reader_.isOpen() || !hasSeedCircle_)
@@ -1066,9 +1254,21 @@ void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
 
 void PhotoPanel::onFilmstripChanged(QListWidgetItem* item)
 {
-    // La selección de exportación se lee en vivo de las casillas al exportar;
-    // aquí solo se muestra por qué se ha tocado la miniatura.
-    Q_UNUSED(item);
+    // La selección de exportación vive en las casillas del filmstrip; aquí solo
+    // se detecta el cambio del usuario (los refrescos de etiquetas no tocan el
+    // estado de la casilla) para marcar el proyecto como modificado.
+    if (!item)
+        return;
+    const int64_t idx = item->data(Qt::UserRole).toLongLong();
+    if (idx < 0 || idx >= static_cast<int64_t>(exportSelection_.size()))
+        return;
+    const bool checked = item->checkState() == Qt::Checked;
+    if (checked == exportSelection_[static_cast<size_t>(idx)])
+        return;
+    exportSelection_[static_cast<size_t>(idx)] = checked;
+    AppLog::info(checked ? tr("Foto %1 marcada para exportar").arg(idx + 1)
+                         : tr("Foto %1 excluida de la exportación").arg(idx + 1));
+    emit modified();
 }
 
 void PhotoPanel::onWorkerReacquired(int64_t index, int predictedBefore)
@@ -1150,6 +1350,7 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
                          .arg(valid)
                          .arg(predicted)
                          .arg(fixed));
+        emit modified();
     } else {
         emit statusMessage(tr("El seguimiento no pudo confirmar el disco"), 0);
         AppLog::error(tr("Seguimiento sin confirmación del disco"));

@@ -2,6 +2,7 @@
 
 #include "common/CircleF.h"
 #include "motion/TrackStatus.h"
+#include "stills/PhotoProject.h"
 #include "stills/PhotoSequenceReader.h"
 #include "tracking/DiscTracker.h"
 
@@ -33,6 +34,14 @@ public:
 
     bool isOpen() const { return reader_.isOpen(); }
     int64_t currentIndex() const { return current_; }
+    bool isBusy() const;
+
+    // Estado persistible de la secuencia (para el proyecto .atracker).
+    PhotoProjectPhotos collectState() const;
+    // Restaura el trabajo guardado; devuelve false y rellena error si no pudo.
+    bool applyState(const PhotoProjectPhotos& data, QString* error = nullptr);
+    // Cierra la secuencia y limpia todos los resultados.
+    void clearSession();
 
     void openImagesDialog();
     void openFolderDialog();
@@ -46,6 +55,9 @@ signals:
     void statusMessage(const QString& msg, int timeoutMs = 0);
     // Progreso de una operación larga; total <= 0 oculta el indicador.
     void workProgress(int done, int total);
+    // El trabajo ha cambiado (círculo, bloqueo, resultado del cálculo,
+    // selección de exportación...): el proyecto debe marcarse como modificado.
+    void modified();
 
 private slots:
     void onItemActivated(QListWidgetItem* item);
@@ -82,7 +94,6 @@ private:
     void applyCircle(const cv::Point2f& center, float radius);
     void applyViewModes();
     void setTrackingBusy(bool busy);
-    void clearSession();
     void updateFilmstripBadges();
     void refreshThumbnailCircles();
     void showCurrentSync();
@@ -121,6 +132,12 @@ private:
     std::vector<bool> locked_;
     // Fotos corregidas a mano: el recálculo automático tampoco las modifica.
     std::vector<bool> manualFixed_;
+    // Selección de exportación (espejo de las casillas del filmstrip) para
+    // detectar cambios del usuario sin reaccionar a los refrescos de etiquetas.
+    std::vector<bool> exportSelection_;
+    // Origen de la secuencia actual, para guardarla en el proyecto.
+    QString sourceFolder_;
+    QStringList sourceFiles_;
     // Miniaturas base del filmstrip (para el placeholder durante la carga y
     // para dibujar encima el círculo de cada foto).
     std::vector<cv::Mat> baseThumbs_;

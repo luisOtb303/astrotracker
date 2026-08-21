@@ -11,9 +11,12 @@
 
 #include <QAction>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDoubleSpinBox>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileDialog>
 #include <QFontDatabase>
 #include <QHBoxLayout>
@@ -46,7 +49,20 @@ MainWindow::MainWindow(QWidget* parent)
     timer_->setInterval(33);
     connect(timer_, &QTimer::timeout, this, &MainWindow::onTimer);
     connect(view_, &VideoView::roiSelected, this, &MainWindow::onRoiSelected);
+
+    const QSettings settings;
+    recentProjects_ = settings.value("Projects/recentFiles").toStringList();
+
+    connect(photosPanel_, &PhotoPanel::modified, this, &MainWindow::markProjectModified);
+    connect(trackerCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { if (reader_) markProjectModified(); });
+    connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { if (reader_) markProjectModified(); });
+    connect(smoothSpin_, &QDoubleSpinBox::valueChanged, this,
+            [this](double) { if (reader_) markProjectModified(); });
+
     updateStabilizationUi();
+    refreshProjectUi();
 }
 
 MainWindow::~MainWindow() = default;
@@ -88,6 +104,30 @@ void MainWindow::setupUi()
 
     QAction* openTb = tb->addAction(style()->standardIcon(QStyle::SP_DialogOpenButton),
                                     tr("Abrir"), this, &MainWindow::openFile);
+    Q_UNUSED(openTb);
+    openProjectAction_ = new QAction(style()->standardIcon(QStyle::SP_DirOpenIcon),
+                                     tr("Abrir &proyecto..."), this);
+    openProjectAction_->setToolTip(tr("Abrir un trabajo guardado (.atracker)"));
+    openProjectAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")));
+    connect(openProjectAction_, &QAction::triggered, this,
+            &MainWindow::openProjectDialog);
+    fileMenu->addAction(openProjectAction_);
+    tb->addAction(openProjectAction_);
+
+    saveProjectAction_ = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton),
+                                     tr("&Guardar proyecto"), this);
+    saveProjectAction_->setShortcut(QKeySequence::Save);
+    saveProjectAction_->setEnabled(false);
+    connect(saveProjectAction_, &QAction::triggered, this,
+            &MainWindow::saveProjectTriggered);
+    fileMenu->addAction(saveProjectAction_);
+    tb->addAction(saveProjectAction_);
+
+    saveProjectAsAction_ = fileMenu->addAction(tr("Guardar proyecto &como..."), this,
+                                               &MainWindow::saveProjectAsTriggered,
+                                               QKeySequence::SaveAs);
+    saveProjectAsAction_->setEnabled(false);
+
     playAction_ = tb->addAction(style()->standardIcon(QStyle::SP_MediaPlay),
                                 tr("Reproducir/Pausar"), this, &MainWindow::playPause);
     playAction_->setEnabled(false);
@@ -140,6 +180,7 @@ void MainWindow::setupUi()
     connect(photosPanel_, &PhotoPanel::statusMessage, this,
             [this](const QString& msg, int timeoutMs) {
                 statusBar()->showMessage(msg, timeoutMs);
+                refreshProjectUi();
             });
     connect(photosPanel_, &PhotoPanel::workProgress, this, [this](int done, int total) {
         if (!progressBar_)
@@ -264,10 +305,22 @@ void MainWindow::populateRecentsMenu(QMenu* menu)
     const QStringList videoFiles = settings.value("Video/recentFiles").toStringList();
     const QStringList photoDirs = photosPanel_->recentFolders();
 
-    if (videoFiles.isEmpty() && photoDirs.isEmpty()) {
+    if (videoFiles.isEmpty() && photoDirs.isEmpty() && recentProjects_.isEmpty()) {
         QAction* none = menu->addAction(tr("(sin recientes)"));
         none->setEnabled(false);
         return;
+    }
+
+    if (!recentProjects_.isEmpty()) {
+        QAction* title = menu->addAction(tr("Proyectos"));
+        title->setEnabled(false);
+        for (const QString& p : recentProjects_) {
+            QAction* a = menu->addAction(QFileInfo(p).fileName());
+            a->setToolTip(p);
+            connect(a, &QAction::triggered, this,
+                    [this, p] { openProject(p); });
+        }
+        menu->addSeparator();
     }
 
     if (!videoFiles.isEmpty()) {
@@ -350,6 +403,7 @@ void MainWindow::openPath(const QString& path)
 
     showCurrentFrame();
     updateStabilizationUi();
+    refreshProjectUi();
     statusBar()->showMessage(
         tr("Abierto: %1  (%2x%3, %4 fps, %5 frames)")
             .arg(path)
@@ -447,6 +501,7 @@ void MainWindow::onRoiSelected(const QRect& rect)
                                  .arg(rect.y()),
                              5000);
     updateStabilizationUi();
+    markProjectModified();
 }
 
 void MainWindow::startAnalyze()
@@ -610,6 +665,7 @@ void MainWindow::setBusy(bool busy)
     exportAction_->setEnabled(!busy);
     previewAction_->setEnabled(!busy);
     playAction_->setEnabled(!busy && reader_);
+    refreshProjectUi();
 }
 
 void MainWindow::updateTransportUi()
@@ -661,4 +717,359 @@ void MainWindow::showLicenses()
 void MainWindow::aboutQt()
 {
     QMessageBox::aboutQt(this);
+}
+
+// ---- Proyecto (.atracker): abrir / guardar / guardar como ----
+
+bool MainWindow::anyBusy() const
+{
+    return photosPanel_->isBusy() || worker_ != nullptr;
+}
+
+bool MainWindow::hasContent() const
+{
+    return photosPanel_->isOpen() || reader_ != nullptr;
+}
+
+PhotoProjectVideo MainWindow::collectVideo() const
+{
+    PhotoProjectVideo v;
+    if (!reader_)
+        return v;
+    v.active = true;
+    v.path = inPath_;
+    v.hasRoi = !roi_.isEmpty();
+    if (v.hasRoi) {
+        v.roiX = roi_.x();
+        v.roiY = roi_.y();
+        v.roiW = roi_.width();
+        v.roiH = roi_.height();
+    }
+    v.startUs = startUs_;
+    v.positionUs = currentUs_;
+    v.tracker = trackerCombo_->currentIndex();
+    v.smoothingAlpha = smoothSpin_->value();
+    v.borderMode = borderCombo_->currentIndex();
+    return v;
+}
+
+void MainWindow::applyVideo(const PhotoProjectVideo& v)
+{
+    if (!reader_ || inPath_ != v.path) {
+        openPath(v.path);
+        if (!reader_)
+            return;
+    }
+
+    trackerCombo_->setCurrentIndex(std::clamp(v.tracker, 0, 1));
+    smoothSpin_->setValue(v.smoothingAlpha);
+    borderCombo_->setCurrentIndex(std::clamp(v.borderMode, 0, 1));
+
+    // La ROI y el inicio del análisis; los offsets del seguimiento no se
+    // guardan (se recalculan con "Seguir").
+    roi_ = v.hasRoi ? QRect(v.roiX, v.roiY, v.roiW, v.roiH) : QRect();
+    view_->setRoiEnabled(true);
+    if (!roi_.isEmpty())
+        view_->setRoi(roi_);
+    else
+        view_->clearRoi();
+    offsets_.clear();
+    previewEnabled_ = false;
+    previewAction_->setChecked(false);
+    startUs_ = v.startUs;
+    startIndex_ =
+        reader_->fps() > 0.0
+            ? static_cast<int64_t>(std::llround(startUs_ * reader_->fps() / 1e6))
+            : 0;
+
+    if (v.positionUs > 0 && v.positionUs < totalUs_) {
+        reader_->seekToUs(v.positionUs);
+        showCurrentFrame();
+    }
+    updateStabilizationUi();
+    statusBar()->showMessage(
+        tr("Vídeo restaurado: pulsa \"Seguir\" para recalcular el análisis"), 6000);
+}
+
+void MainWindow::closeVideo()
+{
+    timer_->stop();
+    playAction_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    playAction_->setEnabled(false);
+    reader_.reset();
+    inPath_.clear();
+    roi_ = QRect();
+    offsets_.clear();
+    previewEnabled_ = false;
+    previewAction_->setChecked(false);
+    view_->setFrame(cv::Mat());
+    resultView_->setFrame(cv::Mat());
+    view_->clearRoi();
+    slider_->setEnabled(false);
+    slider_->setValue(0);
+    frameLabel_->setText(tr("Frame: - / -"));
+    timeLabel_->setText(tr("00:00:00.000"));
+    updateStabilizationUi();
+}
+
+PhotoProject MainWindow::collectProject() const
+{
+    PhotoProject p;
+    p.savedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+    p.photos = photosPanel_->collectState();
+    p.video = collectVideo();
+    return p;
+}
+
+bool MainWindow::saveProject(const QString& path)
+{
+    if (anyBusy()) {
+        statusBar()->showMessage(tr("Espera a que termine la operación antes de guardar"), 5000);
+        return false;
+    }
+    if (!hasContent()) {
+        statusBar()->showMessage(tr("No hay nada que guardar"), 5000);
+        return false;
+    }
+
+    const QByteArray json = photo_project::encode(collectProject());
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QMessageBox::critical(this, tr("AstroTracker"),
+                              tr("No se pudo guardar el proyecto:\n%1").arg(path));
+        AppLog::error(tr("Error al guardar el proyecto: %1").arg(path));
+        return false;
+    }
+    f.write(json);
+    f.close();
+
+    projectPath_ = QFileInfo(path).absoluteFilePath();
+    projectDirty_ = false;
+    rememberProjectPath(projectPath_);
+    refreshProjectUi();
+    statusBar()->showMessage(tr("Proyecto guardado"), 5000);
+    AppLog::info(tr("Proyecto guardado: %1").arg(projectPath_));
+    return true;
+}
+
+bool MainWindow::saveProjectAs()
+{
+    QSettings settings;
+    QString startDir = settings.value("Photos/lastDir").toString();
+    if (startDir.isEmpty() || !QDir(startDir).exists())
+        startDir = settings.value("Video/lastDir").toString();
+
+    QString name = QStringLiteral("astrotracker.atracker");
+    if (!startDir.isEmpty()) {
+        const QString dirName = QDir(startDir).dirName();
+        if (!dirName.isEmpty())
+            name = dirName + QStringLiteral(".atracker");
+    }
+    const QString suggested = startDir.isEmpty() ? name : QDir(startDir).filePath(name);
+
+    QString path = QFileDialog::getSaveFileName(
+        this, tr("Guardar proyecto"), suggested,
+        tr("Proyecto de AstroTracker (*.atracker);;Todos los archivos (*.*)"));
+    if (path.isEmpty())
+        return false;
+    if (!path.endsWith(QStringLiteral(".atracker"), Qt::CaseInsensitive))
+        path += QStringLiteral(".atracker");
+    return saveProject(path);
+}
+
+bool MainWindow::openProject(const QString& path)
+{
+    if (anyBusy()) {
+        QMessageBox::information(this, tr("AstroTracker"),
+                                 tr("Espera a que termine el cálculo o la exportación."));
+        return false;
+    }
+    if (!confirmContinue())
+        return false;
+
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("AstroTracker"),
+                             tr("No se pudo abrir el proyecto:\n%1").arg(path));
+        return false;
+    }
+    PhotoProject p;
+    if (!photo_project::decode(f.readAll(), p)) {
+        QMessageBox::warning(this, tr("AstroTracker"),
+                             tr("El archivo no es un proyecto válido o fue creado por "
+                                "una versión más reciente de AstroTracker:\n%1")
+                                 .arg(path));
+        AppLog::error(tr("Proyecto no válido: %1").arg(path));
+        return false;
+    }
+
+    bool okPhotos = true;
+    if (p.photos.active) {
+        QString err;
+        okPhotos = photosPanel_->applyState(p.photos, &err);
+        if (!okPhotos)
+            QMessageBox::warning(this, tr("AstroTracker"), err);
+    } else {
+        photosPanel_->clearSession();
+    }
+    if (p.video.active)
+        applyVideo(p.video);
+    else
+        closeVideo();
+
+    tabs_->setCurrentWidget(p.photos.active && okPhotos
+                                ? static_cast<QWidget*>(photosPanel_)
+                                : static_cast<QWidget*>(tabs_->widget(0)));
+
+    projectPath_ = QFileInfo(path).absoluteFilePath();
+    projectDirty_ = false;
+    rememberProjectPath(projectPath_);
+
+    // Si hay un autoguardado más reciente que el archivo principal, avisar:
+    // contiene trabajo posterior al último "Guardar".
+    const QString bak = projectPath_ + QStringLiteral(".bak");
+    const QFileInfo mainInfo(projectPath_);
+    const QFileInfo bakInfo(bak);
+    if (bakInfo.exists() && bakInfo.lastModified() >
+            mainInfo.lastModified().addSecs(5))
+        AppLog::warn(tr("Hay un autoguardado más reciente que el proyecto (%1); "
+                        "renómbralo a .atracker para recuperarlo")
+                         .arg(bak));
+
+    refreshProjectUi();
+    statusBar()->showMessage(tr("Proyecto abierto"), 5000);
+    AppLog::info(tr("Proyecto abierto: %1").arg(projectPath_));
+    return true;
+}
+
+bool MainWindow::confirmContinue()
+{
+    if (!projectDirty_)
+        return true;
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("AstroTracker"));
+    box.setIcon(QMessageBox::Question);
+    box.setText(projectPath_.isEmpty()
+                    ? tr("¿Guardar el trabajo antes de continuar?")
+                    : tr("¿Guardar los cambios en %1?")
+                          .arg(QFileInfo(projectPath_).fileName()));
+    QPushButton* saveBtn = box.addButton(tr("&Guardar"), QMessageBox::AcceptRole);
+    box.addButton(tr("&No guardar"), QMessageBox::DestructiveRole);
+    const QPushButton* cancelBtn =
+        box.addButton(tr("&Cancelar"), QMessageBox::RejectRole);
+    box.setDefaultButton(saveBtn);
+    box.exec();
+
+    if (box.clickedButton() == cancelBtn)
+        return false;
+    if (box.clickedButton() != saveBtn)
+        return true;
+    return projectPath_.isEmpty() ? saveProjectAs() : saveProject(projectPath_);
+}
+
+void MainWindow::writeAutosave()
+{
+    // Copia de seguridad silenciosa tras cada cambio, una vez que el proyecto
+    // tiene archivo. El principal solo se escribe con "Guardar".
+    if (projectPath_.isEmpty() || !projectDirty_ || anyBusy())
+        return;
+    const PhotoProject p = collectProject();
+    if (!p.photos.active && !p.video.active)
+        return;
+    QFile f(projectPath_ + QStringLiteral(".bak"));
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return;
+    f.write(photo_project::encode(p));
+    f.close();
+}
+
+void MainWindow::markProjectModified()
+{
+    projectDirty_ = true;
+    refreshProjectUi();
+    writeAutosave();
+}
+
+void MainWindow::rememberProjectPath(const QString& path)
+{
+    recentProjects_.removeAll(path);
+    recentProjects_.push_front(path);
+    while (recentProjects_.size() > 8)
+        recentProjects_.removeLast();
+    QSettings settings;
+    settings.setValue("Projects/recentFiles", recentProjects_);
+    settings.setValue("Projects/lastDir", QFileInfo(path).absolutePath());
+}
+
+void MainWindow::refreshProjectUi()
+{
+    const bool content = hasContent();
+    const bool busy = anyBusy();
+    saveProjectAction_->setEnabled(content && !busy);
+    saveProjectAsAction_->setEnabled(content && !busy);
+    openProjectAction_->setEnabled(!busy);
+
+    QString title = tr("AstroTracker");
+    if (!projectPath_.isEmpty()) {
+        title += QStringLiteral(" — ") + QFileInfo(projectPath_).fileName();
+        if (projectDirty_)
+            title += QLatin1Char('*');
+    }
+    setWindowTitle(title);
+}
+
+void MainWindow::openProjectDialog()
+{
+    if (anyBusy()) {
+        QMessageBox::information(this, tr("AstroTracker"),
+                                 tr("Espera a que termine el cálculo o la exportación."));
+        return;
+    }
+    QSettings settings;
+    QString startDir = settings.value("Projects/lastDir").toString();
+    if (startDir.isEmpty() || !QDir(startDir).exists()) {
+        startDir = settings.value("Photos/lastDir").toString();
+        if (startDir.isEmpty() || !QDir(startDir).exists())
+            startDir = settings.value("Video/lastDir").toString();
+    }
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Abrir proyecto"), startDir,
+        tr("Proyecto de AstroTracker (*.atracker);;Todos los archivos (*.*)"));
+    if (path.isEmpty())
+        return;
+    openProject(path);
+}
+
+void MainWindow::saveProjectTriggered()
+{
+    if (!hasContent() || anyBusy())
+        return;
+    if (projectPath_.isEmpty())
+        saveProjectAs();
+    else
+        saveProject(projectPath_);
+}
+
+void MainWindow::saveProjectAsTriggered()
+{
+    if (!hasContent() || anyBusy())
+        return;
+    saveProjectAs();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    if (anyBusy()) {
+        QMessageBox::information(this, tr("AstroTracker"),
+                                 tr("Hay un cálculo o una exportación en curso. "
+                                    "Detenla (botón \"Detener\") antes de cerrar."));
+        event->ignore();
+        return;
+    }
+    if (!confirmContinue()) {
+        event->ignore();
+        return;
+    }
+    event->accept();
 }

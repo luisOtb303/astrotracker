@@ -74,6 +74,26 @@ Open video → Select object → Track → Preview → Stabilize → Export
 5. Ajustar parámetros (algoritmo, smoothing, predicción, centro) con preview.
 6. Estabilizar y exportar (MP4, AVI, secuencia de imágenes, SER).
 
+## Proyectos: guarda y retoma tu trabajo
+
+El trabajo del modo Fotos (resultados del seguimiento, fotos bloqueadas o
+corregidas a mano y selección de exportación) y del modo Vídeo (vídeo, ROI y
+ajustes) se puede guardar en un **proyecto `.atracker`** (JSON legible) para
+cerrar la app y continuar otro día:
+
+- **Archivo > Abrir proyecto...** (`Ctrl+Mayús+O`), **Guardar proyecto**
+  (`Ctrl+S`) y **Guardar proyecto como...** (`Ctrl+Mayús+S`), también en la
+  barra de herramientas.
+- Semántica clásica de editor: el título muestra el nombre del proyecto y un
+  asterisco si hay cambios sin guardar; al cerrar o abrir otro trabajo pregunta
+  *"¿Guardar los cambios?"*.
+- **Autoguardado**: tras cada cambio se reescribe `proyecto.atracker.bak`; si
+  al reabrir ese archivo es más reciente que el principal, el panel Salida lo
+  avisa (recuperación renombrándolo a `.atracker`).
+- Al reabrir, los resultados se emparejan **por nombre de archivo**: puedes
+  mover la carpeta de fotos o añadir fotos nuevas sin perder el trabajo; las
+  fotos que falten se avisan por la Salida.
+
 ## Requisitos de build
 
 | Componente | Versión | Notas |

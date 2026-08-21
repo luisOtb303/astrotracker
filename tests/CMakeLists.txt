@@ -261,3 +261,15 @@ target_link_libraries(test_export PRIVATE
   FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale)
 
 add_test(NAME test_export COMMAND test_export)
+
+# Proyectos .atracker: serialización JSON del trabajo (Fotos y Vídeo).
+
+add_executable(test_project test_project/main.cpp
+  ../src/stills/PhotoProject.h
+  ../src/stills/PhotoProject.cpp)
+
+target_include_directories(test_project PRIVATE ../src)
+target_compile_definitions(test_project PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_project PRIVATE Qt6::Core)
+
+add_test(NAME test_project COMMAND test_project)
