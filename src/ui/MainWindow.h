@@ -59,8 +59,9 @@ private slots:
     void onWorkerFinished();
     void onLogMessage(int level, const QString& text);
 
-    // Proyecto (.atracker): abrir, guardar y guardar como (semántica clásica).
+    // Proyecto (.atracker): abrir, cerrar, guardar y guardar como.
     void openProjectDialog();
+    void closeProject();
     void saveProjectTriggered();
     void saveProjectAsTriggered();
 
@@ -122,6 +123,7 @@ private:
 
     // Proyecto (.atracker)
     QAction* openProjectAction_ = nullptr;
+    QAction* closeProjectAction_ = nullptr;
     QAction* saveProjectAction_ = nullptr;
     QAction* saveProjectAsAction_ = nullptr;
     QString projectPath_;

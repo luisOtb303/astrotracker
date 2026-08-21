@@ -72,10 +72,44 @@ void MainWindow::setupUi()
     setWindowTitle(tr("AstroTracker"));
     resize(1100, 720);
 
+    // Acciones de proyecto, creadas antes de montar el menú para controlar el
+    // orden; las mismas QAction se comparten con la barra de herramientas.
+    openProjectAction_ = new QAction(style()->standardIcon(QStyle::SP_DirOpenIcon),
+                                     tr("Abrir &proyecto..."), this);
+    openProjectAction_->setToolTip(tr("Abrir un trabajo guardado (.atracker)"));
+    openProjectAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")));
+    connect(openProjectAction_, &QAction::triggered, this,
+            &MainWindow::openProjectDialog);
+
+    closeProjectAction_ = new QAction(tr("&Cerrar proyecto"), this);
+    closeProjectAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+W")));
+    closeProjectAction_->setEnabled(false);
+    closeProjectAction_->setToolTip(tr("Cerrar el proyecto actual y limpiar los resultados"));
+    connect(closeProjectAction_, &QAction::triggered, this, &MainWindow::closeProject);
+
+    saveProjectAction_ = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton),
+                                     tr("&Guardar proyecto"), this);
+    saveProjectAction_->setShortcut(QKeySequence::Save);
+    saveProjectAction_->setEnabled(false);
+    connect(saveProjectAction_, &QAction::triggered, this,
+            &MainWindow::saveProjectTriggered);
+
+    saveProjectAsAction_ = new QAction(tr("Guardar proyecto &como..."), this);
+    saveProjectAsAction_->setShortcut(QKeySequence::SaveAs);
+    saveProjectAsAction_->setEnabled(false);
+    connect(saveProjectAsAction_, &QAction::triggered, this,
+            &MainWindow::saveProjectAsTriggered);
+
     QMenu* fileMenu = menuBar()->addMenu(tr("&Archivo"));
-    QAction* openAction = fileMenu->addAction(tr("&Abrir vídeo..."), this,
-                                              &MainWindow::openFile, QKeySequence::Open);
+    fileMenu->addAction(tr("&Abrir vídeo..."), this, &MainWindow::openFile,
+                        QKeySequence::Open);
     fileMenu->addAction(tr("Abrir &fotos (secuencia)..."), this, &MainWindow::openPhotos);
+    fileMenu->addAction(openProjectAction_);
+    fileMenu->addSeparator();
+    fileMenu->addAction(closeProjectAction_);
+    fileMenu->addSeparator();
+    fileMenu->addAction(saveProjectAction_);
+    fileMenu->addAction(saveProjectAsAction_);
     fileMenu->addSeparator();
     QMenu* recentsMenu = fileMenu->addMenu(tr("&Recientes"));
     connect(recentsMenu, &QMenu::aboutToShow, this, [this, recentsMenu] {
@@ -105,28 +139,8 @@ void MainWindow::setupUi()
     QAction* openTb = tb->addAction(style()->standardIcon(QStyle::SP_DialogOpenButton),
                                     tr("Abrir"), this, &MainWindow::openFile);
     Q_UNUSED(openTb);
-    openProjectAction_ = new QAction(style()->standardIcon(QStyle::SP_DirOpenIcon),
-                                     tr("Abrir &proyecto..."), this);
-    openProjectAction_->setToolTip(tr("Abrir un trabajo guardado (.atracker)"));
-    openProjectAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")));
-    connect(openProjectAction_, &QAction::triggered, this,
-            &MainWindow::openProjectDialog);
-    fileMenu->addAction(openProjectAction_);
     tb->addAction(openProjectAction_);
-
-    saveProjectAction_ = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton),
-                                     tr("&Guardar proyecto"), this);
-    saveProjectAction_->setShortcut(QKeySequence::Save);
-    saveProjectAction_->setEnabled(false);
-    connect(saveProjectAction_, &QAction::triggered, this,
-            &MainWindow::saveProjectTriggered);
-    fileMenu->addAction(saveProjectAction_);
     tb->addAction(saveProjectAction_);
-
-    saveProjectAsAction_ = fileMenu->addAction(tr("Guardar proyecto &como..."), this,
-                                               &MainWindow::saveProjectAsTriggered,
-                                               QKeySequence::SaveAs);
-    saveProjectAsAction_->setEnabled(false);
 
     playAction_ = tb->addAction(style()->standardIcon(QStyle::SP_MediaPlay),
                                 tr("Reproducir/Pausar"), this, &MainWindow::playPause);
@@ -1008,6 +1022,7 @@ void MainWindow::refreshProjectUi()
     const bool busy = anyBusy();
     saveProjectAction_->setEnabled(content && !busy);
     saveProjectAsAction_->setEnabled(content && !busy);
+    closeProjectAction_->setEnabled(content && !busy);
     openProjectAction_->setEnabled(!busy);
 
     QString title = tr("AstroTracker");
@@ -1056,6 +1071,27 @@ void MainWindow::saveProjectAsTriggered()
     if (!hasContent() || anyBusy())
         return;
     saveProjectAs();
+}
+
+void MainWindow::closeProject()
+{
+    if (anyBusy()) {
+        QMessageBox::information(this, tr("AstroTracker"),
+                                 tr("Espera a que termine el cálculo o la exportación."));
+        return;
+    }
+    if (!hasContent())
+        return;
+    if (!confirmContinue())
+        return;
+
+    photosPanel_->clearSession();
+    closeVideo();
+    projectPath_.clear();
+    projectDirty_ = false;
+    refreshProjectUi();
+    statusBar()->showMessage(tr("Proyecto cerrado"), 5000);
+    AppLog::info(tr("Proyecto cerrado"));
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

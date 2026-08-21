@@ -10,11 +10,13 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 ### Added
 
 - **Proyectos guardables (`.atracker`)** — guardar y retomar el trabajo:
-  - **Archivo > Abrir proyecto...** (`Ctrl+Mayús+O`), **Guardar proyecto**
-    (`Ctrl+S`) y **Guardar proyecto como...** (`Ctrl+Mayús+S`), también con
-    botones en la barra de herramientas; semántica clásica de editor: título
-    con el nombre del proyecto y asterisco si hay cambios sin guardar, y aviso
-    *"¿Guardar los cambios?"* al cerrar, empezar de nuevo o abrir otro trabajo.
+  - **Archivo > Abrir proyecto...** (`Ctrl+Mayús+O`), **Cerrar proyecto**
+    (`Ctrl+W`), **Guardar proyecto** (`Ctrl+S`) y **Guardar proyecto como...**
+    (`Ctrl+Mayús+S`), también con botones en la barra de herramientas; menú
+    Archivo reordenado al uso clásico (abrir → cerrar → guardar → recientes,
+    "Salir" al final); título con el nombre del proyecto y asterisco si hay
+    cambios sin guardar, y aviso *"¿Guardar los cambios?"* al cerrar, empezar
+    de nuevo o abrir otro trabajo.
   - El proyecto guarda el trabajo del modo **Fotos** (resultados del
     seguimiento foto a foto, fotos bloqueadas y corregidas a mano, selección
     de exportación, semilla y foto actual) y del modo **Vídeo** (vídeo abierto,
