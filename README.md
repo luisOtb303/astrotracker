@@ -170,6 +170,9 @@ resources/      iconos, estilos
 
 - `docs/research.md` — investigación de proyectos Open Source (PIPP, Siril, SER
   Player, vid.stab, FFmpeg, OpenCV), licencias y decisiones.
+- `docs/roadmap.md` — líneas futuras valoradas: aceleración GPU (hwaccel de
+  vídeo, encoders hardware, OpenCL) y mejora del modo automático con IA
+  (híbrido clásico + CNN).
 - `THIRD_PARTY_LICENSES/` — licencias y obligaciones de cada dependencia.
 - `changelog.md` — historial de cambios.
 - `AGENTS.md` — guía para agentes de IA y decisiones técnicas fijadas.
