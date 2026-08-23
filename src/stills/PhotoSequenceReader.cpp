@@ -192,6 +192,8 @@ void PhotoSequenceReader::initAnalysisCache()
 
 // Nombre de entrada de caché auto-invalidable: incluye mtime y tamaño del
 // original; si la foto cambia, cambia el nombre y la entrada vieja se olvida.
+// El prefijo de versión invalida en bloque las entradas generadas con un
+// procesado RAW distinto (p. ej. antes de desactivar el auto-brillo).
 std::string PhotoSequenceReader::cacheEntryPath(const std::string& srcPath,
                                                 int maxDim) const
 {
@@ -206,10 +208,10 @@ std::string PhotoSequenceReader::cacheEntryPath(const std::string& srcPath,
     std::string ext = p.extension().string();
     for (char& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    fs::path entry = fs::path(analysisCacheDir_) /
-                     (p.stem().string() + ext + "." + std::to_string(mtime) +
-                      "." + std::to_string(size) + "." + std::to_string(maxDim) +
-                      ".jpg");
+    fs::path entry =
+        fs::path(analysisCacheDir_) /
+        ("v2." + p.stem().string() + ext + "." + std::to_string(mtime) +
+         "." + std::to_string(size) + "." + std::to_string(maxDim) + ".jpg");
     return entry.string();
 }
 

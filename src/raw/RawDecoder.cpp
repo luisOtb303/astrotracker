@@ -36,9 +36,13 @@ bool RawDecoder::decode(const std::string& path, cv::Mat& out, bool want16, int 
         return false;
     }
 
-    const int full = std::max(raw.imgdata.sizes.width, raw.imgdata.sizes.height);
+    // Procesado determinista y fiel: sin el auto-brillo de dcraw, que ajustaba
+    // la ganancia según el histograma de CADA foto (las oscuras salían
+    // amplificadas, con el ruido de croma convertido en moteado naranja) y con
+    // demosaicing completo (half_size se lo saltaba y dejaba artefactos de
+    // color). El coste extra lo absorbe la caché de análisis.
     raw.imgdata.params.output_bps = want16 ? 16 : 8;
-    raw.imgdata.params.half_size = (maxDim > 0 && full / 2 > maxDim) ? 1 : 0;
+    raw.imgdata.params.no_auto_bright = 1;
 
     if (raw.dcraw_process() != LIBRAW_SUCCESS) {
         raw.recycle();
