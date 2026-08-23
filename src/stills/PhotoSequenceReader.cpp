@@ -6,10 +6,12 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <set>
-#include <thread>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -228,26 +230,23 @@ void PhotoSequenceReader::storeCachedAnalysis(const std::string& srcPath,
 {
     if (analysisCacheDir_.empty() || img.empty())
         return;
-    // Escritura atómica (tmp + rename); si otro hilo/proceso escribió ya la
-    // misma entrada, se descarta el tmp sin error.
-    std::lock_guard<std::mutex> lock(cacheMutex_);
     try {
-        const std::string entry = cacheEntryPath(srcPath, maxDim);
-        const std::string tmp = entry + "." +
-                                std::to_string(std::hash<std::thread::id>{}(
-                                    std::this_thread::get_id())) +
-                                ".tmp";
+        // Codificación a memoria y volcado directo a la entrada final:
+        // cv::imwrite elige el codificador por la extensión del nombre, así
+        // que un temporal ".tmp" fallaba siempre en silencio.
+        std::vector<unsigned char> encoded;
         const std::vector<int> params{cv::IMWRITE_JPEG_QUALITY, 92};
-        if (!cv::imwrite(tmp, img, params))
+        if (!cv::imencode(".jpg", img, encoded, params))
             return;
-        std::error_code ec;
-        fs::rename(tmp, entry, ec);
-        if (ec) {
-            ec.clear();
-            fs::remove(tmp, ec);
-        }
+        std::lock_guard<std::mutex> lock(cacheMutex_);
+        const std::string entry = cacheEntryPath(srcPath, maxDim);
+        std::ofstream file(entry, std::ios::binary | std::ios::trunc);
+        if (!file)
+            return;
+        file.write(reinterpret_cast<const char*>(encoded.data()),
+                   static_cast<std::streamsize>(encoded.size()));
     } catch (const std::exception&) {
-        // La caché es una optimización: cualquier fallo se ignora.
+        // La caché es una optimización: cualquier otro fallo se ignora.
     }
 }
 

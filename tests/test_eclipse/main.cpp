@@ -23,6 +23,7 @@
 
 int main(int argc, char** argv)
 {
+    int failures = 0;
     const char* folder = (argc > 1) ? argv[1] : TESTDATA_ECLIPSE;
 
     PhotoSequenceReader reader;
@@ -42,6 +43,27 @@ int main(int argc, char** argv)
             return 0;
         }
         cv::cvtColor(frames[i], gray[i], cv::COLOR_BGR2GRAY);
+    }
+
+    // Regresión de la caché de análisis: las lecturas anteriores (RAW con
+    // maxDim) deben haber dejado entradas JPG en _astrotracker_cache/.
+    {
+        std::string cacheDir = folder;
+        cacheDir += "/_astrotracker_cache";
+        int cached = 0;
+        std::error_code ec;
+        for (const auto& e : std::filesystem::directory_iterator(cacheDir, ec))
+            if (!ec && e.is_regular_file() &&
+                e.path().extension() == ".jpg")
+                ++cached;
+        if (cached < 1) {
+            std::printf("FAIL: la caché de análisis está vacía (%s)\n",
+                        cacheDir.c_str());
+            ++failures;
+        } else {
+            std::printf("caché de análisis: %d entradas en %s\n", cached,
+                        cacheDir.c_str());
+        }
     }
 
     // Semilla: círculo real del disco en la foto 0 (barrido de radio fijo).
@@ -122,5 +144,5 @@ int main(int argc, char** argv)
     }
 
     printf("Informe generado (sin fallo): revisa los overlays y/o la app para juzgar.\n");
-    return 0;
+    return failures == 0 ? 0 : 1;
 }

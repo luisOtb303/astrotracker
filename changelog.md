@@ -13,10 +13,10 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   guarda una copia pequeña (JPG 1600 px) en `_astrotracker_cache/` junto a las
   fotos; la navegación, las miniaturas grandes y el cálculo automático salen
   desde ahí (la carpeta se puede borrar sin riesgo: se regenera sola y se
-  invalida si cambia la foto original). La lectura de análisis usa además el
-  medio tamaño del sensor de LibRaw (`half_size`), aproximadamente el doble de
-  rápido en el harness del eclipse; la exportación sigue usando la resolución
-  completa original.
+  invalida si cambia la foto original; medida en el banco del eclipse:
+  segunda pasada ~6× más rápida). La lectura de análisis usa además el medio
+  tamaño del sensor de LibRaw (`half_size`); la exportación sigue usando la
+  resolución completa original.
 
 ### Fixed
 
