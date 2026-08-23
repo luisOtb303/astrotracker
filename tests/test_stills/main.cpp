@@ -70,12 +70,17 @@ int main()
     CHECK(reader.width() == 30);
     CHECK(reader.height() == 20);
 
-    // readAt normaliza la 16-bit a BGR8 y mantiene geometría.
+    // readAt convierte la 16-bit a BGR8 con mapeo fiel (dividir por 257) y
+    // mantiene geometría: sin estirado por foto, una imagen oscura sigue oscura.
     cv::Mat img;
     CHECK(reader.readAt(0, img));
     CHECK(!img.empty());
     CHECK(img.type() == CV_8UC3);
     CHECK(img.cols == 30 && img.rows == 20);
+    // Valor máximo de deep16 = 29*1000 = 29000 → 29000/257 ≈ 112 (antes el
+    // estirado min-max lo llevaba a 255).
+    const cv::Vec3b px = img.at<cv::Vec3b>(10, 29);
+    CHECK(px[0] >= 100 && px[0] <= 125 && px[0] == px[1] && px[1] == px[2]);
 
     // Redimensión por maxDim.
     CHECK(reader.readAt(3, img, 50));

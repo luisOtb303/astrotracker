@@ -15,14 +15,15 @@
 namespace {
 
 // Los RAW devueltos por readFullRes pueden ser de 16 bits; se convierten a
-// BGR8 para el centrado y la codificación.
+// BGR8 para el centrado y la codificación. Mapeo fiel (dividir por 257,
+// 65535→255), igual que en PhotoSequenceReader: determinista entre fotos.
 cv::Mat toBgr8(const cv::Mat& m)
 {
     if (m.empty())
         return m;
     cv::Mat out;
     if (m.depth() != CV_8U) {
-        const double alpha = (m.depth() == CV_16U) ? 1.0 / 256.0 : 1.0;
+        const double alpha = (m.depth() == CV_16U) ? 1.0 / 257.0 : 1.0;
         m.convertTo(out, CV_8U, alpha);
     } else {
         out = m;
@@ -80,6 +81,11 @@ double centralMean(const cv::Mat& bgr)
     const int h = g.rows * 4 / 10;
     return cv::mean(g(cv::Rect(x0, y0, w, h)))[0];
 }
+
+// Ganancia máxima de la normalización de brillo: una foto mucho más oscura
+// que la primera (p. ej. totalidad del eclipse) no se debe "recuperar" a
+// base de saturarla; se limita el ajuste.
+constexpr double kNormMaxGain = 3.0;
 
 } // namespace
 
@@ -189,7 +195,9 @@ void PhotoExportWorker::run()
         cv::Mat out = BorderHandler::apply(work, offset, mode);
 
         // Normalización de brillo: todas las fotos al brillo medio de la
-        // primera, para que la transición no "parpadee".
+        // primera, para que la transición no "parpadee". Con tope de ganancia:
+        // una foto mucho más oscura (totalidad) se ajusta como máximo ×3 y
+        // nunca hasta saturarla.
         if (normBright) {
             const double m = centralMean(out);
             if (!haveRef) {
@@ -197,8 +205,17 @@ void PhotoExportWorker::run()
                 haveRef = true;
             } else if (refMean > 5.0 && m > 1.0) {
                 const double k = refMean / m;
-                if (std::abs(k - 1.0) > 0.02)
-                    out = out * k;
+                const double capped = std::clamp(k, 1.0 / kNormMaxGain, kNormMaxGain);
+                if (std::abs(capped - 1.0) > 0.02) {
+                    if (capped != k)
+                        AppLog::warn(QStringLiteral(
+                                         "brillo muy distinto en %1: ganancia limitada "
+                                         "de ×%2 a ×%3")
+                                         .arg(QString::fromStdString(reader.fileName(i)))
+                                         .arg(k, 0, 'f', 2)
+                                         .arg(capped, 0, 'f', 2));
+                    out = out * capped;
+                }
             }
         }
 

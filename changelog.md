@@ -7,6 +7,29 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+### Added
+
+- **Caché de análisis para RAW**: la primera vez que se lee un CR2/CR3 se
+  guarda una copia pequeña (JPG 1600 px) en `_astrotracker_cache/` junto a las
+  fotos; la navegación, las miniaturas grandes y el cálculo automático salen
+  desde ahí (la carpeta se puede borrar sin riesgo: se regenera sola y se
+  invalida si cambia la foto original). La lectura de análisis usa además el
+  medio tamaño del sensor de LibRaw (`half_size`), aproximadamente el doble de
+  rápido en el harness del eclipse; la exportación sigue usando la resolución
+  completa original.
+
+### Fixed
+
+- **El visor ya no "aclara" ni pixela las fotos oscuras**: la conversión
+  16→8 bits estiraba el histograma de cada foto por separado (min→max), así
+  que una foto subexpuesta amplificaba su ruido y cada frame quedaba con un
+  brillo distinto. Ahora el mapeo es fiel y determinista (dividir por 257,
+  65535→255), idéntico en visor, análisis y exportación.
+- **Normalización de brillo del MP4 con tope**: la ganancia estaba sin límite
+  y las fotos mucho más oscuras que la primera (totalidad del eclipse) se
+  saturaban hasta verse pixeladas. Ahora el ajuste se limita a ×3 como máximo
+  y la Salida avisa cuando se recorta.
+
 ## [0.2.0] - 2026-08-21
 
 ### Added

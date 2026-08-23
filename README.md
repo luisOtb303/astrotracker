@@ -94,6 +94,12 @@ cerrar la app y continuar otro día:
   mover la carpeta de fotos o añadir fotos nuevas sin perder el trabajo; las
   fotos que falten se avisan por la Salida.
 
+**Rendimiento con RAW**: la primera lectura de cada CR2/CR3 crea una copia de
+análisis (JPG pequeño) en `_astrotracker_cache/`, junto a las fotos; después,
+navegar y calcular es mucho más rápido. La carpeta se puede borrar: se regenera
+sola. El visor muestra las fotos **fielmente** (sin estirar el brillo por foto),
+así que una toma subexpuesta se ve oscura tal cual es.
+
 ## Requisitos de build
 
 | Componente | Versión | Notas |

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <opencv2/core.hpp>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,9 @@
 // LibRaw). El orden de trabajo es el de los nombres de archivo ordenados
 // naturalmente (IMG_2, IMG_10 en lugar de IMG_10, IMG_2).
 // Cada foto se decodifica bajo demanda; no se retiene nada en memoria.
+// Los RAW usan además una caché de análisis en disco (_astrotracker_cache/
+// junto a las fotos): la primera lectura genera un JPG pequeño y las demás
+// salen de él (navegación, miniaturas y cálculo mucho más rápidos).
 class PhotoSequenceReader
 {
 public:
@@ -46,7 +50,16 @@ private:
     static int compareNatural(const std::string& a, const std::string& b);
     bool probeSize();
 
+    void initAnalysisCache();
+    std::string cacheEntryPath(const std::string& srcPath, int maxDim) const;
+    bool loadCachedAnalysis(const std::string& srcPath, int maxDim, cv::Mat& out) const;
+    void storeCachedAnalysis(const std::string& srcPath, int maxDim,
+                             const cv::Mat& img) const;
+
     std::vector<std::string> paths_;
     int width_ = 0;
     int height_ = 0;
+    // Caché de análisis de RAW (vacío = desactivada).
+    std::string analysisCacheDir_;
+    mutable std::mutex cacheMutex_;
 };

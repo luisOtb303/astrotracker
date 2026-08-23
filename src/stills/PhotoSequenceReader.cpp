@@ -7,9 +7,34 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <mutex>
 #include <set>
+#include <thread>
 
 namespace fs = std::filesystem;
+
+// Conversión fiel a BGR8: los 16 bits se dividen por 257 (65535 → 255), sin
+// estirar el histograma. Determinista entre fotos: una foto oscura se ve
+// oscura tal cual es, sin amplificar ruido ni alterar el brillo relativo de la
+// secuencia. Es el mismo mapeo que usa el exportador.
+void toBgr8Faithful(cv::Mat& m)
+{
+    if (!m.empty() && m.depth() == CV_16U) {
+        cv::Mat eight;
+        m.convertTo(eight, CV_8U, 1.0 / 257.0);
+        m = eight;
+    }
+    switch (m.empty() ? 0 : m.channels()) {
+    case 1:
+        cv::cvtColor(m, m, cv::COLOR_GRAY2BGR);
+        break;
+    case 4:
+        cv::cvtColor(m, m, cv::COLOR_BGRA2BGR);
+        break;
+    default:
+        break;
+    }
+}
 
 bool PhotoSequenceReader::open(const std::vector<std::string>& paths)
 {
@@ -35,6 +60,7 @@ bool PhotoSequenceReader::open(const std::vector<std::string>& paths)
 
     if (paths_.empty())
         return false;
+    initAnalysisCache();
     return probeSize();
 }
 
@@ -58,40 +84,42 @@ void PhotoSequenceReader::close()
     paths_.clear();
     width_ = 0;
     height_ = 0;
+    analysisCacheDir_.clear();
 }
 
 bool PhotoSequenceReader::readAt(int64_t idx, cv::Mat& out, int maxDim) const
 {
-    cv::Mat raw;
-    if (!readFullRes(idx, raw))
+    if (idx < 0 || idx >= count())
         return false;
+    const std::string& path = paths_[static_cast<size_t>(idx)];
 
-    // Normaliza a BGR8 para vista previa/análisis.
-    if (raw.depth() != CV_8U) {
-        cv::Mat norm;
-        cv::normalize(raw, norm, 0, 255, cv::NORM_MINMAX, CV_8U);
-        raw = norm;
+    // RAW: decodificación media (rápida) y caché de análisis en disco; la
+    // primera lectura genera el JPG pequeño y las siguientes salen de él.
+    if (isRawExt(path)) {
+        if (maxDim > 0 && loadCachedAnalysis(path, maxDim, out))
+            return true;
+        cv::Mat m;
+        if (!RawDecoder::decode(path, m, true, maxDim))
+            return false;
+        toBgr8Faithful(m);
+        if (maxDim > 0)
+            storeCachedAnalysis(path, maxDim, m);
+        out = m;
+        return true;
     }
-    switch (raw.channels()) {
-    case 1:
-        cv::cvtColor(raw, raw, cv::COLOR_GRAY2BGR);
-        break;
-    case 4:
-        cv::cvtColor(raw, raw, cv::COLOR_BGRA2BGR);
-        break;
-    default:
-        break;
-    }
+
+    out = cv::imread(path, cv::IMREAD_UNCHANGED);
+    if (out.empty())
+        return false;
+    toBgr8Faithful(out);
 
     if (maxDim > 0) {
-        const int longest = std::max(raw.cols, raw.rows);
+        const int longest = std::max(out.cols, out.rows);
         if (longest > maxDim) {
             const double scale = static_cast<double>(maxDim) / longest;
-            cv::resize(raw, raw, cv::Size(), scale, scale, cv::INTER_AREA);
+            cv::resize(out, out, cv::Size(), scale, scale, cv::INTER_AREA);
         }
     }
-
-    out = raw;
     return true;
 }
 
@@ -143,6 +171,84 @@ bool PhotoSequenceReader::probeSize()
     width_ = firstImg.cols;
     height_ = firstImg.rows;
     return true;
+}
+
+void PhotoSequenceReader::initAnalysisCache()
+{
+    analysisCacheDir_.clear();
+    if (paths_.empty())
+        return;
+    const fs::path parent = fs::path(paths_.front()).parent_path();
+    if (parent.empty())
+        return;
+    std::error_code ec;
+    const fs::path dir = parent / "_astrotracker_cache";
+    fs::create_directories(dir, ec);
+    if (!ec)
+        analysisCacheDir_ = dir.string();
+}
+
+// Nombre de entrada de caché auto-invalidable: incluye mtime y tamaño del
+// original; si la foto cambia, cambia el nombre y la entrada vieja se olvida.
+std::string PhotoSequenceReader::cacheEntryPath(const std::string& srcPath,
+                                                int maxDim) const
+{
+    const fs::path p(srcPath);
+    std::error_code ec;
+    const auto t = fs::last_write_time(p, ec);
+    const unsigned long long mtime =
+        ec ? 0ULL
+           : static_cast<unsigned long long>(t.time_since_epoch().count());
+    const unsigned long long size =
+        ec ? 0ULL : static_cast<unsigned long long>(fs::file_size(p, ec));
+    std::string ext = p.extension().string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    fs::path entry = fs::path(analysisCacheDir_) /
+                     (p.stem().string() + ext + "." + std::to_string(mtime) +
+                      "." + std::to_string(size) + "." + std::to_string(maxDim) +
+                      ".jpg");
+    return entry.string();
+}
+
+bool PhotoSequenceReader::loadCachedAnalysis(const std::string& srcPath,
+                                             int maxDim, cv::Mat& out) const
+{
+    if (analysisCacheDir_.empty())
+        return false;
+    cv::Mat img = cv::imread(cacheEntryPath(srcPath, maxDim), cv::IMREAD_COLOR);
+    if (img.empty())
+        return false;
+    out = img;
+    return true;
+}
+
+void PhotoSequenceReader::storeCachedAnalysis(const std::string& srcPath,
+                                              int maxDim, const cv::Mat& img) const
+{
+    if (analysisCacheDir_.empty() || img.empty())
+        return;
+    // Escritura atómica (tmp + rename); si otro hilo/proceso escribió ya la
+    // misma entrada, se descarta el tmp sin error.
+    std::lock_guard<std::mutex> lock(cacheMutex_);
+    try {
+        const std::string entry = cacheEntryPath(srcPath, maxDim);
+        const std::string tmp = entry + "." +
+                                std::to_string(std::hash<std::thread::id>{}(
+                                    std::this_thread::get_id())) +
+                                ".tmp";
+        const std::vector<int> params{cv::IMWRITE_JPEG_QUALITY, 92};
+        if (!cv::imwrite(tmp, img, params))
+            return;
+        std::error_code ec;
+        fs::rename(tmp, entry, ec);
+        if (ec) {
+            ec.clear();
+            fs::remove(tmp, ec);
+        }
+    } catch (const std::exception&) {
+        // La caché es una optimización: cualquier fallo se ignora.
+    }
 }
 
 bool PhotoSequenceReader::isSupported(const std::string& path)
