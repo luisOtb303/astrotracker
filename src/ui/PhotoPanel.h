@@ -7,6 +7,7 @@
 #include "tracking/DiscTracker.h"
 
 #include <QWidget>
+#include <map>
 #include <vector>
 
 class QAction;
@@ -43,6 +44,13 @@ public:
     // Cierra la secuencia y limpia todos los resultados.
     void clearSession();
 
+    // Perfil de seguimiento del proyecto y override de método por foto.
+    TrackingProfile trackingProfile() const { return trackingProfile_; }
+    void setTrackingProfile(ObjectProfile profile);
+    DiscMethod overrideFor(int64_t index) const;
+    void setOverrideForCurrent(DiscMethod method); // Prediction = quitar
+    QString photoStatusText() const;
+
     void openImagesDialog();
     void openFolderDialog();
     // Abre directamente una carpeta (desde el menú "Recientes"), sin diálogo.
@@ -58,6 +66,10 @@ signals:
     // El trabajo ha cambiado (círculo, bloqueo, resultado del cálculo,
     // selección de exportación...): el proyecto debe marcarse como modificado.
     void modified();
+    // El perfil de seguimiento del proyecto cambió (para sincronizar el panel).
+    void profileChanged(ObjectProfile profile);
+    // Texto de estado de la foto actual ("arco · 82% · válida") para el dock.
+    void photoStatusChanged(const QString& statusText);
 
 private slots:
     void onItemActivated(QListWidgetItem* item);
@@ -138,6 +150,9 @@ private:
     // Origen de la secuencia actual, para guardarla en el proyecto.
     QString sourceFolder_;
     QStringList sourceFiles_;
+    // Perfil de seguimiento y overrides de método por foto (dock Seguimiento).
+    TrackingProfile trackingProfile_{trackingProfileFor(ObjectProfile::Auto)};
+    std::map<int64_t, DiscMethod> methodOverrides_;
     // Miniaturas base del filmstrip (para el placeholder durante la carga y
     // para dibujar encima el círculo de cada foto).
     std::vector<cv::Mat> baseThumbs_;

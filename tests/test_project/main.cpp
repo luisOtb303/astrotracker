@@ -32,6 +32,8 @@ PhotoProject makeSample()
                             QStringLiteral("D:/fotos/IMG_0003.CR2")};
     p.photos.analysisMaxDim = 1600;
     p.photos.currentIndex = 1;
+    p.photos.profile = ObjectProfile::SolarEclipse;
+    p.photos.overrides.push_back(PhotoProjectOverride{2, DiscMethod::KnownRadius});
     p.photos.hasSeed = true;
     p.photos.seedIndex = 2;
     p.photos.seedX = 800.5f;
@@ -46,6 +48,8 @@ PhotoProject makeSample()
     r1.radius = 119.5f;
     r1.status = 0;
     r1.predicted = false;
+    r1.confidence = 0.93f;
+    r1.method = DiscMethod::ArcBlob;
     PhotoProjectPhotoResult r2;
     r2.file = QStringLiteral("IMG_0003.CR2");
     r2.x = 810.75f;
@@ -112,7 +116,16 @@ int main()
         expect(sameFloat(r.x, 795.f) && sameFloat(r.y, 600.f) &&
                    sameFloat(r.radius, 119.5f) && r.status == 0 && !r.predicted,
                "valores del resultado IMG_0002");
+        expect(r.method == DiscMethod::ArcBlob &&
+                   r.confidence > 0.92f && r.confidence < 0.94f,
+               "confianza y método del resultado");
     }
+    // Perfil y override por foto.
+    expect(dst.photos.profile == ObjectProfile::SolarEclipse, "perfil restaurado");
+    expect(dst.photos.overrides.size() == 1 &&
+               dst.photos.overrides[0].index == 2 &&
+               dst.photos.overrides[0].method == DiscMethod::KnownRadius,
+           "override de método por foto");
     // Coincidencia por nombre insensible a mayusculas.
     expect(dst.photos.indexOfResult(QStringLiteral("img_0003.cr2")) >= 0,
            "coincidencia sin mayusculas");

@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
@@ -31,6 +32,7 @@
 #include <QProgressBar>
 #include <QSettings>
 #include <QSlider>
+#include <QStandardItemModel>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTabWidget>
@@ -155,25 +157,6 @@ void MainWindow::setupUi()
     QToolBar* stabTb = addToolBar(tr("Estabilización"));
     stabTb->setMovable(false);
 
-    trackerCombo_ = new QComboBox(stabTb);
-    trackerCombo_->addItem(tr("Template"));
-    trackerCombo_->addItem(tr("Centroid"));
-    trackerCombo_->setToolTip(tr("Algoritmo de seguimiento"));
-    stabTb->addWidget(trackerCombo_);
-
-    borderCombo_ = new QComboBox(stabTb);
-    borderCombo_->addItem(tr("Borde negro"));
-    borderCombo_->addItem(tr("Borde réplica"));
-    borderCombo_->setToolTip(tr("Relleno de los bordes al desplazar el frame"));
-    stabTb->addWidget(borderCombo_);
-
-    smoothSpin_ = new QDoubleSpinBox(stabTb);
-    smoothSpin_->setRange(0.01, 1.0);
-    smoothSpin_->setSingleStep(0.05);
-    smoothSpin_->setValue(0.3);
-    smoothSpin_->setToolTip(tr("Suavizado (alpha EMA) del centro del objeto"));
-    stabTb->addWidget(smoothSpin_);
-
     analyzeAction_ = stabTb->addAction(tr("Seguir"), this, &MainWindow::startAnalyze);
     analyzeAction_->setToolTip(tr("Analizar el vídeo: seguir el objeto y calcular desplazamientos"));
     previewAction_ = stabTb->addAction(tr("Vista previa"), this, &MainWindow::togglePreview);
@@ -240,6 +223,138 @@ void MainWindow::setupUi()
     resizeDocks({logDock_}, {160}, Qt::Vertical);
 
     connect(&AppLog::instance(), &AppLog::message, this, &MainWindow::onLogMessage);
+
+    // Dock "Seguimiento": perfiles y métodos del modo Fotos + ajustes del
+    // pipeline de vídeo (antes en la toolbar de estabilización).
+    trackDock_ = new QDockWidget(tr("Seguimiento"), this);
+    trackDock_->setObjectName(QStringLiteral("trackingDock"));
+    trackDock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    auto* dockWidget = new QWidget(trackDock_);
+    auto* dockLay = new QVBoxLayout(dockWidget);
+    dockLay->setContentsMargins(6, 4, 6, 4);
+
+    auto* photosGroup = new QGroupBox(tr("Fotos"), dockWidget);
+    auto* photosLay = new QVBoxLayout(photosGroup);
+    photosLay->addWidget(new QLabel(tr("Perfil"), photosGroup));
+    profileCombo_ = new QComboBox(photosGroup);
+    for (int i = 0; i <= static_cast<int>(ObjectProfile::LunarEclipse); ++i) {
+        const ObjectProfile op = static_cast<ObjectProfile>(i);
+        profileCombo_->addItem(QString::fromLatin1(objectProfileName(op)),
+                               static_cast<int>(op));
+    }
+    photosLay->addWidget(profileCombo_);
+
+    photosLay->addWidget(new QLabel(tr("Método de esta foto"), photosGroup));
+    photoMethodCombo_ = new QComboBox(photosGroup);
+    photoMethodCombo_->addItem(tr("(según perfil)"),
+                               static_cast<int>(DiscMethod::Prediction));
+    struct MethodEntry {
+        DiscMethod m;
+        bool ready;
+    };
+    const MethodEntry methodEntries[] = {
+        {DiscMethod::Template, true},
+        {DiscMethod::ArcBlob, true},
+        {DiscMethod::KnownRadius, false},
+        {DiscMethod::PhaseCorrelation, false},
+        {DiscMethod::Ecc, false},
+        {DiscMethod::Features, false},
+        {DiscMethod::Centroid, false},
+    };
+    for (const MethodEntry& e : methodEntries) {
+        photoMethodCombo_->addItem(QString::fromLatin1(methodName(e.m)),
+                                   static_cast<int>(e.m));
+        if (!e.ready) {
+            if (auto* model = qobject_cast<QStandardItemModel*>(
+                    photoMethodCombo_->model())) {
+                if (auto* item =
+                        model->item(photoMethodCombo_->count() - 1))
+                    item->setEnabled(false);
+            }
+        }
+    }
+    photosLay->addWidget(photoMethodCombo_);
+    photoStatusLabel_ = new QLabel(tr("sin secuencia"), photosGroup);
+    photoStatusLabel_->setWordWrap(true);
+    photosLay->addWidget(photoStatusLabel_);
+    clearOverrideBtn_ = new QPushButton(tr("Quitar método fijado"), photosGroup);
+    clearOverrideBtn_->setEnabled(false);
+    photosLay->addWidget(clearOverrideBtn_);
+
+    auto* videoGroup = new QGroupBox(tr("Vídeo"), dockWidget);
+    auto* videoLay = new QVBoxLayout(videoGroup);
+    videoLay->addWidget(new QLabel(tr("Tracker"), videoGroup));
+    trackerCombo_ = new QComboBox(videoGroup);
+    trackerCombo_->addItem(tr("Template"));
+    trackerCombo_->addItem(tr("Centroid"));
+    trackerCombo_->setToolTip(tr("Algoritmo de seguimiento"));
+    videoLay->addWidget(trackerCombo_);
+    videoLay->addWidget(new QLabel(tr("Borde"), videoGroup));
+    borderCombo_ = new QComboBox(videoGroup);
+    borderCombo_->addItem(tr("Borde negro"));
+    borderCombo_->addItem(tr("Borde réplica"));
+    borderCombo_->setToolTip(tr("Relleno de los bordes al desplazar el frame"));
+    videoLay->addWidget(borderCombo_);
+    videoLay->addWidget(new QLabel(tr("Suavizado"), videoGroup));
+    smoothSpin_ = new QDoubleSpinBox(videoGroup);
+    smoothSpin_->setRange(0.01, 1.0);
+    smoothSpin_->setSingleStep(0.05);
+    smoothSpin_->setValue(0.3);
+    smoothSpin_->setToolTip(tr("Suavizado (alpha EMA) del centro del objeto"));
+    videoLay->addWidget(smoothSpin_);
+
+    dockLay->addWidget(photosGroup);
+    dockLay->addWidget(videoGroup);
+    dockLay->addStretch(1);
+    trackDock_->setWidget(dockWidget);
+    addDockWidget(Qt::LeftDockWidgetArea, trackDock_);
+
+    connect(profileCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+                const ObjectProfile op = static_cast<ObjectProfile>(
+                    profileCombo_->itemData(idx).toInt());
+                if (photosPanel_->trackingProfile().profile == op)
+                    return;
+                photosPanel_->setTrackingProfile(op);
+                markProjectModified();
+            });
+    connect(photoMethodCombo_,
+            QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int idx) {
+                const DiscMethod m = static_cast<DiscMethod>(
+                    photoMethodCombo_->itemData(idx).toInt());
+                if (photosPanel_->overrideFor(photosPanel_->currentIndex()) == m)
+                    return;
+                photosPanel_->setOverrideForCurrent(m);
+                markProjectModified();
+            });
+    connect(clearOverrideBtn_, &QPushButton::clicked, this, [this] {
+        photosPanel_->setOverrideForCurrent(DiscMethod::Prediction);
+        markProjectModified();
+    });
+    connect(photosPanel_, &PhotoPanel::photoStatusChanged, this,
+            [this](const QString& s) {
+                photoStatusLabel_->setText(s.isEmpty() ? tr("sin secuencia") : s);
+                const DiscMethod ov =
+                    photosPanel_->overrideFor(photosPanel_->currentIndex());
+                clearOverrideBtn_->setEnabled(
+                    ov != DiscMethod::Prediction && !photosPanel_->isBusy());
+                const int want = photoMethodCombo_->findData(static_cast<int>(ov));
+                if (want >= 0 && want != photoMethodCombo_->currentIndex()) {
+                    photoMethodCombo_->blockSignals(true);
+                    photoMethodCombo_->setCurrentIndex(want);
+                    photoMethodCombo_->blockSignals(false);
+                }
+            });
+    connect(photosPanel_, &PhotoPanel::profileChanged, this,
+            [this](ObjectProfile p) {
+                const int idx = profileCombo_->findData(static_cast<int>(p));
+                if (idx >= 0 && idx != profileCombo_->currentIndex()) {
+                    profileCombo_->blockSignals(true);
+                    profileCombo_->setCurrentIndex(idx);
+                    profileCombo_->blockSignals(false);
+                }
+            });
 
     connect(slider_, &QSlider::valueChanged, this, [this](int ms) {
         if (!reader_ || ms == currentUs_ / 1000)
@@ -1024,6 +1139,8 @@ void MainWindow::refreshProjectUi()
     saveProjectAsAction_->setEnabled(content && !busy);
     closeProjectAction_->setEnabled(content && !busy);
     openProjectAction_->setEnabled(!busy);
+    profileCombo_->setEnabled(!busy);
+    photoMethodCombo_->setEnabled(content && !busy);
 
     QString title = tr("AstroTracker");
     if (!projectPath_.isEmpty()) {

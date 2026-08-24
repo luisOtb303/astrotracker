@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tracking/DiscTracker.h"
+#include "tracking/DiscTrackerParams.h"
 
 #include <opencv2/core.hpp>
 #include <vector>

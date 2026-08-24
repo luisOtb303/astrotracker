@@ -47,6 +47,17 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
     }
     o.insert(QStringLiteral("maxDim"), p.analysisMaxDim);
     o.insert(QStringLiteral("actual"), p.currentIndex);
+    o.insert(QStringLiteral("perfil"), QLatin1String(objectProfileKey(p.profile)));
+    if (!p.overrides.empty()) {
+        QJsonArray overrides;
+        for (const PhotoProjectOverride& ov : p.overrides) {
+            QJsonObject e;
+            e.insert(QStringLiteral("indice"), ov.index);
+            e.insert(QStringLiteral("metodo"), QLatin1String(discMethodKey(ov.method)));
+            overrides.append(e);
+        }
+        o.insert(QStringLiteral("overrides"), overrides);
+    }
 
     if (p.hasSeed) {
         QJsonObject s;
@@ -69,6 +80,8 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
         e.insert(QStringLiteral("bloqueada"), r.locked);
         e.insert(QStringLiteral("fijada"), r.manualFixed);
         e.insert(QStringLiteral("exportar"), r.exportSelected);
+        e.insert(QStringLiteral("confianza"), static_cast<double>(r.confidence));
+        e.insert(QStringLiteral("metodo"), QLatin1String(discMethodKey(r.method)));
         results.append(e);
     }
     o.insert(QStringLiteral("resultados"), results);
@@ -133,6 +146,21 @@ void decodePhotos(const QJsonObject& o, PhotoProjectPhotos& p)
         p.originFiles.push_back(f.toString());
     p.analysisMaxDim = readInt(o.value(QLatin1String("maxDim")), 1600);
     p.currentIndex = readInt(o.value(QLatin1String("actual")), 0);
+    if (!objectProfileFromKey(
+            o.value(QLatin1String("perfil")).toString().toLatin1().constData(),
+            p.profile))
+        p.profile = ObjectProfile::Auto;
+    const auto overrides = o.value(QLatin1String("overrides")).toArray();
+    for (const auto& item : overrides) {
+        const QJsonObject e = item.toObject();
+        PhotoProjectOverride ov;
+        ov.index = readInt(e.value(QLatin1String("indice")), -1);
+        if (!discMethodFromKey(
+                e.value(QLatin1String("metodo")).toString().toLatin1().constData(),
+                ov.method))
+            continue;
+        p.overrides.push_back(ov);
+    }
 
     const QJsonObject seed = o.value(QLatin1String("semilla")).toObject();
     p.hasSeed = !seed.isEmpty();
@@ -157,6 +185,12 @@ void decodePhotos(const QJsonObject& o, PhotoProjectPhotos& p)
         r.locked = readBool(e.value(QLatin1String("bloqueada")));
         r.manualFixed = readBool(e.value(QLatin1String("fijada")));
         r.exportSelected = readBool(e.value(QLatin1String("exportar")), true);
+        r.confidence = static_cast<float>(
+            readDouble(e.value(QLatin1String("confianza")), 0.0));
+        if (!discMethodFromKey(
+                e.value(QLatin1String("metodo")).toString().toLatin1().constData(),
+                r.method))
+            r.method = DiscMethod::Prediction;
         p.results.push_back(r);
     }
 }

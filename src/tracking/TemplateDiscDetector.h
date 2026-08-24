@@ -1,5 +1,6 @@
 #pragma once
 
+#include "tracking/DiscTrackerParams.h"
 #include "tracking/IDiscDetector.h"
 
 #include <opencv2/core.hpp>

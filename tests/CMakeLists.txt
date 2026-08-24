@@ -290,6 +290,6 @@ add_executable(test_project test_project/main.cpp
 
 target_include_directories(test_project PRIVATE ../src)
 target_compile_definitions(test_project PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(test_project PRIVATE Qt6::Core)
+target_link_libraries(test_project PRIVATE Qt6::Core ${OpenCV_LIBS})
 
 add_test(NAME test_project COMMAND test_project)

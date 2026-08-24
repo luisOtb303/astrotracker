@@ -52,6 +52,8 @@ add_executable(astrotracker WIN32
   src/tracking/TemplateDiscDetector.cpp
   src/tracking/ArcBlobDiscDetector.h
   src/tracking/ArcBlobDiscDetector.cpp
+  src/tracking/TrackingProfile.h
+  src/tracking/DiscTrackerParams.h
   src/tracking/DiscTracker.h
   src/tracking/DiscTracker.cpp
   src/tracking/DiscArcFit.h

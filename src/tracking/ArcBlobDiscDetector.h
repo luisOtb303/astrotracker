@@ -1,5 +1,6 @@
 #pragma once
 
+#include "tracking/DiscTrackerParams.h"
 #include "tracking/IDiscDetector.h"
 
 // Detector de arco visible / blob brillante: el centro del disco se reconstruye
@@ -18,8 +19,7 @@ public:
 
     void onConfirmed(const DetectorContext& ctx,
                      const cv::Point2f& confirmedCenter) override;
-
-    void onMissed() override {}
+    void onMissed() override;
 
 private:
     // Un blob es "simétrico" cuando es redondeado, de área parecida a πR² y

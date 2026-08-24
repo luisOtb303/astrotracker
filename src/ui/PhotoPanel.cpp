@@ -210,6 +210,11 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     QSettings settings;
     recentFolders_ = settings.value("Photos/recentFolders").toStringList();
     lastDir_ = settings.value("Photos/lastDir").toString();
+    ObjectProfile saved = ObjectProfile::Auto;
+    if (objectProfileFromKey(
+            settings.value("Photos/profile").toString().toLatin1().constData(),
+            saved))
+        trackingProfile_ = trackingProfileFor(saved);
 }
 
 PhotoPanel::~PhotoPanel() = default;
@@ -330,6 +335,7 @@ void PhotoPanel::clearSession()
     tracks_.clear();
     analyzed_ = false;
     locked_.clear();
+    methodOverrides_.clear();
     loadingView_ = false;
     updatingBadges_ = false;
     if (lockAction_)
@@ -628,6 +634,7 @@ void PhotoPanel::updateNavUi()
                                locked_[static_cast<size_t>(current_)]);
     }
     infoLabel_->setText(info);
+    emit photoStatusChanged(photoStatusText());
 }
 
 void PhotoPanel::onRoiSelected(const QRect& rect)
@@ -1003,6 +1010,62 @@ bool PhotoPanel::isBusy() const
     return worker_ != nullptr || exportWorker_ != nullptr;
 }
 
+void PhotoPanel::setTrackingProfile(ObjectProfile profile)
+{
+    if (trackingProfile_.profile == profile)
+        return;
+    trackingProfile_ = trackingProfileFor(profile);
+    QSettings settings;
+    settings.setValue("Photos/profile", QLatin1String(objectProfileKey(profile)));
+    AppLog::info(tr("Perfil de seguimiento: %1").arg(objectProfileName(profile)));
+    emit modified();
+    emit profileChanged(profile);
+}
+
+DiscMethod PhotoPanel::overrideFor(int64_t index) const
+{
+    const auto it = methodOverrides_.find(index);
+    return it != methodOverrides_.end() ? it->second : DiscMethod::Prediction;
+}
+
+void PhotoPanel::setOverrideForCurrent(DiscMethod method)
+{
+    if (!reader_.isOpen())
+        return;
+    const int64_t idx = current_;
+    if (method == DiscMethod::Prediction)
+        methodOverrides_.erase(idx);
+    else
+        methodOverrides_[idx] = method;
+    updateNavUi(); // refresca el texto de estado (y emite photoStatusChanged)
+}
+
+QString PhotoPanel::photoStatusText() const
+{
+    if (!reader_.isOpen())
+        return QString();
+    QString s;
+    if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
+        const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
+        QString estado = t.predicted ? tr("supuesta")
+                                     : (t.status == TrackStatus::VALID
+                                            ? tr("válida")
+                                            : tr("dudosa"));
+        s = QStringLiteral("%1 · %2% · %3")
+                .arg(QString::fromLatin1(methodName(t.method)))
+                .arg(std::lround(t.confidence * 100.0f))
+                .arg(estado);
+    } else if (hasSeedCircle_) {
+        s = tr("semilla sin calcular");
+    } else {
+        s = tr("sin análisis");
+    }
+    const auto it = methodOverrides_.find(current_);
+    if (it != methodOverrides_.end())
+        s += tr(" · fijada a %1").arg(QString::fromLatin1(methodName(it->second)));
+    return s;
+}
+
 PhotoProjectPhotos PhotoPanel::collectState() const
 {
     PhotoProjectPhotos d;
@@ -1019,6 +1082,9 @@ PhotoProjectPhotos PhotoPanel::collectState() const
     }
     d.analysisMaxDim = displayMaxDim_;
     d.currentIndex = static_cast<int>(current_);
+    d.profile = trackingProfile_.profile;
+    for (const auto& [idx, m] : methodOverrides_)
+        d.overrides.push_back(PhotoProjectOverride{static_cast<int>(idx), m});
     d.hasSeed = hasSeedCircle_;
     d.seedIndex = static_cast<int>(seedIndex_);
     d.seedX = seedCircle_.center.x;
@@ -1047,6 +1113,8 @@ PhotoProjectPhotos PhotoPanel::collectState() const
             r.radius = tracks_[idx].radius;
             r.status = static_cast<int>(tracks_[idx].status);
             r.predicted = tracks_[idx].predicted;
+            r.confidence = tracks_[idx].confidence;
+            r.method = tracks_[idx].method;
         }
         r.locked = locked;
         r.manualFixed = manual;
@@ -1089,6 +1157,14 @@ bool PhotoPanel::applyState(const PhotoProjectPhotos& data, QString* error)
     displayMaxDim_ = data.analysisMaxDim > 0 ? data.analysisMaxDim : 1600;
     reloadSequence();
 
+    // Perfil y overrides por foto.
+    trackingProfile_ = trackingProfileFor(data.profile);
+    methodOverrides_.clear();
+    for (const PhotoProjectOverride& ov : data.overrides)
+        if (ov.index >= 0)
+            methodOverrides_[static_cast<int64_t>(ov.index)] = ov.method;
+    emit profileChanged(trackingProfile_.profile);
+
     // Restaurar resultados y marcas casilla a casilla por nombre de archivo
     // (tolera reordenar o añadir fotos a la carpeta).
     const int64_t total = reader_.count();
@@ -1121,6 +1197,8 @@ bool PhotoPanel::applyState(const PhotoProjectPhotos& data, QString* error)
         t.status = static_cast<TrackStatus>(
             e.status >= 0 && e.status <= 2 ? e.status : 2);
         t.predicted = e.predicted;
+        t.confidence = e.confidence;
+        t.method = e.method;
         locked_[idx] = e.locked;
         manualFixed_[idx] = e.manualFixed;
         if (e.radius > 0.f)
@@ -1201,7 +1279,8 @@ void PhotoPanel::runTracking()
             mask[i] = true;
 
     worker_ = new PhotoTrackWorker(paths, seedCircle_, seedIndex_, displayMaxDim_,
-                                   DiscTrackerParams(), mask, this);
+                                   DiscTrackerParams(), trackingProfile_,
+                                   methodOverrides_, mask, this);
 
     connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
     connect(worker_, &PhotoTrackWorker::reacquired, this, &PhotoPanel::onWorkerReacquired);
@@ -1282,7 +1361,7 @@ void PhotoPanel::onWorkerReacquired(int64_t index, int predictedBefore)
 void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>& results)
 {
     if (ok && !results.isEmpty()) {
-        const int stride = 5;
+        const int stride = 7;
         const int total = static_cast<int>(results.size() / stride);
         const std::vector<DiscTrack> old = std::move(tracks_);
         tracks_.clear();
@@ -1307,6 +1386,11 @@ void PhotoPanel::onWorkerFinished(bool ok, const QString&, const QVector<double>
             t.radius = static_cast<float>(results[at + 2]);
             t.status = static_cast<TrackStatus>(static_cast<int>(results[at + 3]));
             t.predicted = results[at + 4] > 0.5;
+            t.confidence = static_cast<float>(results[at + 5]);
+            const int m = static_cast<int>(results[at + 6]);
+            t.method = (m >= 0 && m <= static_cast<int>(DiscMethod::Centroid))
+                           ? static_cast<DiscMethod>(m)
+                           : DiscMethod::Prediction;
             tracks_.push_back(t);
         }
         analyzed_ = !tracks_.empty();

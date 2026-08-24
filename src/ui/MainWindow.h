@@ -17,6 +17,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QProgressBar;
+class QPushButton;
 class QSlider;
 class QTabWidget;
 class QTimer;
@@ -129,6 +130,13 @@ private:
     QString projectPath_;
     bool projectDirty_ = false;
     QStringList recentProjects_;
+
+    // Dock "Seguimiento": perfiles/métodos de Fotos y ajustes de Vídeo
+    QDockWidget* trackDock_ = nullptr;
+    QComboBox* profileCombo_ = nullptr;
+    QComboBox* photoMethodCombo_ = nullptr;
+    QLabel* photoStatusLabel_ = nullptr;
+    QPushButton* clearOverrideBtn_ = nullptr;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;

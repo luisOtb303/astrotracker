@@ -2,8 +2,7 @@
 
 #include "tracking/DiscArcFit.h"
 
-ArcBlobDiscDetector::ArcBlobDiscDetector(const DiscTrackerParams& params)
-    : p_(params)
+ArcBlobDiscDetector::ArcBlobDiscDetector(const DiscTrackerParams&)
 {
 }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tracking/TrackingProfile.h"
+
 #include <QString>
 #include <QStringList>
 #include <QtGlobal>
@@ -19,6 +21,15 @@ struct PhotoProjectPhotoResult {
     bool locked = false;        // bloqueada por el usuario
     bool manualFixed = false;   // corregida a mano
     bool exportSelected = true; // casilla "exportar" del filmstrip
+    float confidence = 0.f;     // confianza de la medición (0..1)
+    DiscMethod method = DiscMethod::Prediction; // método que la localizó
+};
+
+// Override por foto: método principal fijado por el usuario para esa foto
+// concreta (Prediction = sin override).
+struct PhotoProjectOverride {
+    int index = -1;
+    DiscMethod method = DiscMethod::Prediction;
 };
 
 struct PhotoProjectPhotos {
@@ -28,6 +39,8 @@ struct PhotoProjectPhotos {
     QStringList originFiles;
     int analysisMaxDim = 1600;  // espacio de coordenadas de los círculos
     int currentIndex = 0;
+    ObjectProfile profile = ObjectProfile::Auto; // perfil de seguimiento del proyecto
+    std::vector<PhotoProjectOverride> overrides; // método principal por foto
     bool hasSeed = false;
     int seedIndex = 0;
     float seedX = 0.f;

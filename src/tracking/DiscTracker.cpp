@@ -9,15 +9,63 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 DiscTracker::DiscTracker(const DiscTrackerParams& params)
     : p_(params)
     , motion_(std::max(1, p_.lostAfterMisses))
     , scorer_(p_)
     , fusion_(scorer_)
-    , templateDet_(new TemplateDiscDetector(p_))
-    , arcDet_(new ArcBlobDiscDetector(p_))
 {
+    setProfile(TrackingProfile{});
+}
+
+void DiscTracker::setProfile(const TrackingProfile& profile)
+{
+    profile_ = profile;
+    if (profile_.priority.empty())
+        profile_ = trackingProfileFor(ObjectProfile::Auto);
+    singleMethod_ = DiscMethod::Prediction;
+    rebuildDetectors();
+}
+
+void DiscTracker::setSingleMethod(DiscMethod method)
+{
+    singleMethod_ = method;
+}
+
+void DiscTracker::rebuildDetectors()
+{
+    detectors_.clear();
+    const auto add = [this](DiscMethod m) {
+        for (const auto& d : detectors_)
+            if (d->method() == m)
+                return;
+        switch (m) {
+        case DiscMethod::Template:
+            detectors_.emplace_back(new TemplateDiscDetector(p_));
+            break;
+        case DiscMethod::ArcBlob:
+            detectors_.emplace_back(new ArcBlobDiscDetector(p_));
+            break;
+        default:
+            break; // métodos aún sin detector implementado
+        }
+    };
+    for (DiscMethod m : profile_.priority)
+        add(m);
+    // Salvaguarda: el motor necesita al menos plantilla y arco.
+    add(DiscMethod::Template);
+    add(DiscMethod::ArcBlob);
+}
+
+bool DiscTracker::hasTemplate() const
+{
+    for (const auto& d : detectors_) {
+        if (d->method() == DiscMethod::Template)
+            return static_cast<const TemplateDiscDetector*>(d.get())->hasTemplate();
+    }
+    return false;
 }
 
 void DiscTracker::init(const cv::Point2f& center, float radius)
@@ -70,13 +118,19 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
     ctx.searchWindow = win;
     ctx.allowFullFrame = false;
 
-    // Localización gruesa: candidatos de los detectores. La búsqueda en todo
-    // el frame solo se activa si la ventana no dio nada (comportamiento
+    // Localización gruesa: candidatos de los detectores del perfil (o del
+    // método único fijado por foto). La búsqueda a frame completo solo se
+    // activa si ninguna fuente previa encontró nada (comportamiento
     // histórico: la plantilla en ventana bloquea el arco a frame completo).
-    std::vector<DiscDetection> cands = templateDet_->detect(ctx);
-    ctx.allowFullFrame = cands.empty();
-    for (DiscDetection& d : arcDet_->detect(ctx))
-        cands.push_back(std::move(d));
+    std::vector<DiscDetection> cands;
+    for (const auto& det : detectors_) {
+        if (singleMethod_ != DiscMethod::Prediction &&
+            det->method() != singleMethod_)
+            continue;
+        ctx.allowFullFrame = cands.empty();
+        for (DiscDetection& d : det->detect(ctx))
+            cands.push_back(std::move(d));
+    }
 
     // Selección: gana el candidato con el limbo radial más fuerte; el disco
     // real tiene un borde definido y el halo o las fases difusas puntúan bajo.
@@ -100,19 +154,25 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
     bool found = false;
     cv::Point2f measured = pred;
     bool strongFit = false;
+    float confidence = 0.f;
+    DiscMethod method = DiscMethod::Prediction;
     if (est.ok && est.inlierRatio >= p_.acceptRatio) {
         found = true;
         measured = est.center;
         strongFit = est.inlierRatio >= p_.validRatio;
+        confidence = est.inlierRatio;
+        method = sel.best ? sel.best->method : DiscMethod::Prediction;
     }
 
     // Sin plantilla todavía (primera foto): si el ajuste fino no convence, la
     // semilla pintada por el usuario es la medición inicial. Esto además crea
     // la plantilla con la que re-adquirir el disco en las fotos siguientes.
-    if (!templateDet_->hasTemplate() && !found) {
+    if (!hasTemplate() && !found) {
         found = true;
         measured = pred;
         strongFit = false;
+        method = DiscMethod::Prediction;
+        confidence = 0.5f; // semilla del usuario: posición de partida
     } else if (!found && sel.best) {
         if (sel.best->method == DiscMethod::Template) {
             // La plantilla localizó el disco con confianza aunque el ajuste fino
@@ -128,16 +188,23 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
             measured = sel.best->center;
             strongFit = false;
         }
+        if (found) {
+            confidence = sel.best->confidence;
+            method = sel.best->method;
+        }
     }
 
     const cv::Point2f center = motion_.update(found, measured);
 
     out.center = center;
     out.radius = radius_;
+    out.confidence = found ? confidence : 0.f;
+    out.method = found ? method : DiscMethod::Prediction;
     if (found) {
         out.status = strongFit ? TrackStatus::VALID : TrackStatus::UNCERTAIN;
         out.predicted = false;
-        templateDet_->onConfirmed(ctx, center);
+        for (const auto& det : detectors_)
+            det->onConfirmed(ctx, center);
         searchMisses_ = 0;
         if (lastPredicted_) {
             out.reacquired = true;
@@ -151,8 +218,8 @@ DiscTrack DiscTracker::track(const cv::Mat& bgr)
         ++searchMisses_;
         ++predictedRun_;
         lastPredicted_ = true;
-        templateDet_->onMissed();
-        arcDet_->onMissed();
+        for (const auto& det : detectors_)
+            det->onMissed();
     }
     return out;
 }
