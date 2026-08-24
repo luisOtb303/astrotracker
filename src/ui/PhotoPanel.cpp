@@ -1052,7 +1052,7 @@ QString PhotoPanel::photoStatusText() const
                                             ? tr("válida")
                                             : tr("dudosa"));
         s = QStringLiteral("%1 · %2% · %3")
-                .arg(QString::fromLatin1(methodName(t.method)))
+                .arg(QString::fromUtf8(methodName(t.method)))
                 .arg(std::lround(t.confidence * 100.0f))
                 .arg(estado);
     } else if (hasSeedCircle_) {
@@ -1062,7 +1062,7 @@ QString PhotoPanel::photoStatusText() const
     }
     const auto it = methodOverrides_.find(current_);
     if (it != methodOverrides_.end())
-        s += tr(" · fijada a %1").arg(QString::fromLatin1(methodName(it->second)));
+        s += tr(" · fijada a %1").arg(QString::fromUtf8(methodName(it->second)));
     return s;
 }
 

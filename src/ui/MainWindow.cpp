@@ -239,7 +239,7 @@ void MainWindow::setupUi()
     profileCombo_ = new QComboBox(photosGroup);
     for (int i = 0; i <= static_cast<int>(ObjectProfile::LunarEclipse); ++i) {
         const ObjectProfile op = static_cast<ObjectProfile>(i);
-        profileCombo_->addItem(QString::fromLatin1(objectProfileName(op)),
+        profileCombo_->addItem(QString::fromUtf8(objectProfileName(op)),
                                static_cast<int>(op));
     }
     photosLay->addWidget(profileCombo_);
@@ -262,7 +262,7 @@ void MainWindow::setupUi()
         {DiscMethod::Centroid, false},
     };
     for (const MethodEntry& e : methodEntries) {
-        photoMethodCombo_->addItem(QString::fromLatin1(methodName(e.m)),
+        photoMethodCombo_->addItem(QString::fromUtf8(methodName(e.m)),
                                    static_cast<int>(e.m));
         if (!e.ready) {
             if (auto* model = qobject_cast<QStandardItemModel*>(

@@ -93,7 +93,7 @@ public:
                         .arg(t.center.x, 0, 'f', 0)
                         .arg(t.center.y, 0, 'f', 0)
                         .arg(t.radius, 0, 'f', 0)
-                        .arg(QString::fromLatin1(methodName(t.method)))
+                        .arg(QString::fromUtf8(methodName(t.method)))
                         .arg(std::lround(t.confidence * 100.0f)));
                 if (t.reacquired) {
                     emit reacquired(i, t.predictedBefore);
