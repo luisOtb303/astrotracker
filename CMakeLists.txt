@@ -42,6 +42,16 @@ add_executable(astrotracker WIN32
   src/tracking/CentroidTracker.cpp
   src/tracking/CircleEstimator.h
   src/tracking/CircleEstimator.cpp
+  src/tracking/DiscDetection.h
+  src/tracking/IDiscDetector.h
+  src/tracking/LimbScorer.h
+  src/tracking/LimbScorer.cpp
+  src/tracking/DiscFusion.h
+  src/tracking/DiscFusion.cpp
+  src/tracking/TemplateDiscDetector.h
+  src/tracking/TemplateDiscDetector.cpp
+  src/tracking/ArcBlobDiscDetector.h
+  src/tracking/ArcBlobDiscDetector.cpp
   src/tracking/DiscTracker.h
   src/tracking/DiscTracker.cpp
   src/tracking/DiscArcFit.h

@@ -189,6 +189,16 @@ add_executable(test_disc test_disc/main.cpp
   ../src/tracking/CircleEstimator.cpp
   ../src/tracking/DiscArcFit.h
   ../src/tracking/DiscArcFit.cpp
+  ../src/tracking/DiscDetection.h
+  ../src/tracking/IDiscDetector.h
+  ../src/tracking/LimbScorer.h
+  ../src/tracking/LimbScorer.cpp
+  ../src/tracking/DiscFusion.h
+  ../src/tracking/DiscFusion.cpp
+  ../src/tracking/TemplateDiscDetector.h
+  ../src/tracking/TemplateDiscDetector.cpp
+  ../src/tracking/ArcBlobDiscDetector.h
+  ../src/tracking/ArcBlobDiscDetector.cpp
   ../src/tracking/DiscTracker.h
   ../src/tracking/DiscTracker.cpp)
 
@@ -215,6 +225,16 @@ add_executable(test_eclipse test_eclipse/main.cpp
   ../src/tracking/CircleEstimator.cpp
   ../src/tracking/DiscArcFit.h
   ../src/tracking/DiscArcFit.cpp
+  ../src/tracking/DiscDetection.h
+  ../src/tracking/IDiscDetector.h
+  ../src/tracking/LimbScorer.h
+  ../src/tracking/LimbScorer.cpp
+  ../src/tracking/DiscFusion.h
+  ../src/tracking/DiscFusion.cpp
+  ../src/tracking/TemplateDiscDetector.h
+  ../src/tracking/TemplateDiscDetector.cpp
+  ../src/tracking/ArcBlobDiscDetector.h
+  ../src/tracking/ArcBlobDiscDetector.cpp
   ../src/tracking/DiscTracker.h
   ../src/tracking/DiscTracker.cpp)
 

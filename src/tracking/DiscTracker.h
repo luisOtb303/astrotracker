@@ -3,8 +3,8 @@
 #include "motion/MotionModel.h"
 #include "motion/TrackStatus.h"
 
+#include <memory>
 #include <opencv2/core.hpp>
-#include <vector>
 
 // Resultado del seguimiento del disco en una foto.
 struct DiscTrack {
@@ -19,18 +19,6 @@ struct DiscTrack {
     // cuántas fotos supuestas le precedieron.
     bool reacquired = false;
     int predictedBefore = 0;
-};
-
-// Resultado de la localización gruesa del disco en una foto.
-struct CoarseHit {
-    // 0 = nada, 1 = plantilla en ventana, 2 = blob/arco en ventana,
-    // 3 = plantilla en todo el frame, 4 = blob/arco en todo el frame.
-    int quality = 0;
-    cv::Point2f center{0.f, 0.f};
-    // Arco de limbo que sustenta el candidato (grados). Para un blob simétrico
-    // (disco lleno o corona) se marca como 360.
-    float spanDeg = 0.f;
-    bool symmetric = false;
 };
 
 // Parámetros del seguimiento del disco (Sol/Luna) por perfil radial.
@@ -56,16 +44,19 @@ struct DiscTrackerParams {
     float templateSqMax = 0.5f;
 };
 
-// Sigue el centro de un disco de radio fijo foto a foto. En cada foto busca el
-// limbo (paso brillante→oscuro) en una banda radial alrededor del centro
-// predicho por el modelo de movimiento; los puntos del limbo se ajustan a un
-// círculo de radio fijo (CircleEstimator). Si no hay confirmación (nube,
-// montaña, eclipse), se mantiene la posición predicha y el estado se degrada a
-// UNCERTAIN/LOST. Para no "atascarse" en la semilla cuando el objeto salta
-// fuera de esa banda (deriva típica sin star tracker), la localización gruesa
-// usa como plantilla el parche del último disco confirmado (matchTemplate) o,
-// en su defecto, el blob brillante más grande, y amplía la ventana de búsqueda
-// progresivamente hasta volver a confirmar. El radio fijado por el usuario
+class ArcBlobDiscDetector;
+class DiscFusion;
+class LimbScorer;
+class TemplateDiscDetector;
+
+// Sigue el centro de un disco de radio fijo foto a foto. Orquesta varias
+// fuentes de candidatos (detectores: plantilla del último disco confirmado,
+// arco visible/blob brillante; más fuentes en el futuro) y elige la medición
+// por la fuerza del limbo radial (LimbScorer + DiscFusion); los puntos del
+// limbo se ajustan a un círculo de radio fijo (CircleEstimator). Si no hay
+// confirmación (nube, montaña, eclipse), se mantiene la posición predicha por
+// el modelo de movimiento y el estado se degrada a UNCERTAIN/LOST, ampliando
+// progresivamente la ventana de búsqueda. El radio fijado por el usuario
 // nunca se modifica.
 class DiscTracker
 {
@@ -81,21 +72,14 @@ public:
 
 private:
     float searchMargin() const;
-    // Localización gruesa: genera hasta 4 candidatos de centro (predict, matchTemplate
-    // en ventana/frame, arco del blob, blob simétrico). track() elige el mejor por
-    // la fuerza del gradiente radial del limbo.
-    void findCandidates(const cv::Mat& gray, const cv::Point2f& pred,
-                        std::vector<CoarseHit>& out) const;
-    // Un blob es "simétrico" cuando es redondeado, de área parecida a πR² y con
-    // el centroide en el centro de su caja: así el centroide coincide con el
-    // centro del disco (disco lleno o corona de la totalidad).
-    bool isSymmetricBlob(int area, int width, int height) const;
-    void refreshTemplate(const cv::Mat& gray, const cv::Point2f& center);
 
     DiscTrackerParams p_;
     MotionModel motion_;
     float radius_ = 0.f;
-    cv::Mat template_;
+    LimbScorer scorer_;
+    DiscFusion fusion_;
+    std::unique_ptr<TemplateDiscDetector> templateDet_;
+    std::unique_ptr<ArcBlobDiscDetector> arcDet_;
     int searchMisses_ = 0;
     int predictedRun_ = 0;
     bool lastPredicted_ = false;
