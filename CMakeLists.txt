@@ -43,6 +43,10 @@ add_executable(astrotracker WIN32
   src/tracking/CircleEstimator.h
   src/tracking/CircleEstimator.cpp
   src/tracking/DiscDetection.h
+  src/tracking/EccDiscDetector.h
+  src/tracking/EccDiscDetector.cpp
+  src/tracking/FeatureDiscDetector.h
+  src/tracking/FeatureDiscDetector.cpp
   src/tracking/IDiscDetector.h
   src/tracking/LimbScorer.h
   src/tracking/LimbScorer.cpp

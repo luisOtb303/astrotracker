@@ -190,6 +190,10 @@ add_executable(test_disc test_disc/main.cpp
   ../src/tracking/DiscArcFit.h
   ../src/tracking/DiscArcFit.cpp
   ../src/tracking/DiscDetection.h
+  ../src/tracking/EccDiscDetector.h
+  ../src/tracking/EccDiscDetector.cpp
+  ../src/tracking/FeatureDiscDetector.h
+  ../src/tracking/FeatureDiscDetector.cpp
   ../src/tracking/IDiscDetector.h
   ../src/tracking/LimbScorer.h
   ../src/tracking/LimbScorer.cpp
@@ -232,6 +236,10 @@ add_executable(test_eclipse test_eclipse/main.cpp
   ../src/tracking/DiscArcFit.h
   ../src/tracking/DiscArcFit.cpp
   ../src/tracking/DiscDetection.h
+  ../src/tracking/EccDiscDetector.h
+  ../src/tracking/EccDiscDetector.cpp
+  ../src/tracking/FeatureDiscDetector.h
+  ../src/tracking/FeatureDiscDetector.cpp
   ../src/tracking/IDiscDetector.h
   ../src/tracking/LimbScorer.h
   ../src/tracking/LimbScorer.cpp
@@ -311,6 +319,10 @@ add_test(NAME test_project COMMAND test_project)
 add_executable(test_detectors test_detectors/main.cpp
   ../src/motion/TrackStatus.h
   ../src/tracking/DiscDetection.h
+  ../src/tracking/EccDiscDetector.h
+  ../src/tracking/EccDiscDetector.cpp
+  ../src/tracking/FeatureDiscDetector.h
+  ../src/tracking/FeatureDiscDetector.cpp
   ../src/tracking/IDiscDetector.h
   ../src/tracking/DiscTrackerParams.h
   ../src/tracking/DiscArcFit.h

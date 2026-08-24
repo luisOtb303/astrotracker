@@ -2,6 +2,8 @@
 #include "tracking/CentroidDiscDetector.h"
 #include "tracking/DiscDetection.h"
 #include "tracking/DiscFusion.h"
+#include "tracking/EccDiscDetector.h"
+#include "tracking/FeatureDiscDetector.h"
 #include "tracking/KnownRadiusDiscDetector.h"
 #include "tracking/LimbScorer.h"
 #include "tracking/PhaseCorrelationDiscDetector.h"
@@ -209,6 +211,87 @@ int main()
             sel.best->method == DiscMethod::Template;
         expect(!outlierWon,
                "DiscFusion: el outlier con confianza alta no gana");
+    }
+
+    // ---- ECC: textura desplazada una cantidad pequeña (subpíxel). ----
+    {
+        const cv::Point2f center(320, 260);
+        const float radius = 50.f;
+        cv::Mat frameA(520, 700, CV_8UC1);
+        cv::RNG rng(11);
+        cv::randn(frameA, cv::Scalar::all(90), cv::Scalar::all(25));
+
+        // Frame B = escena desplazada (+7,-5).
+        const cv::Point2f shiftVec(7.f, -5.f);
+        cv::Mat frameB(520, 700, CV_8UC1);
+        frameB.setTo(cv::Scalar::all(60));
+        frameA(cv::Rect(30, 30, 640, 440))
+            .copyTo(frameB(cv::Rect(30 + cvRound(shiftVec.x),
+                                    30 + cvRound(shiftVec.y), 640, 440)));
+
+        EccDiscDetector det({});
+
+        cv::Mat grayA = smooth(frameA);
+        DetectorContext ctxA;
+        fillContext(ctxA, grayA, center, radius);
+        det.onConfirmed(ctxA, center);
+
+        cv::Mat grayB = smooth(frameB);
+        DetectorContext ctxB;
+        fillContext(ctxB, grayB, center, radius);
+        const auto cands = det.detect(ctxB);
+
+        bool ok = false;
+        for (const auto& d : cands) {
+            if (d.method == DiscMethod::Ecc) {
+                const float err = static_cast<float>(
+                    cv::norm((d.center - center) - shiftVec));
+                if (err < 2.0)
+                    ok = true;
+            }
+        }
+        expect(ok, "ECC recupera el shift fino");
+    }
+
+    // ---- Features: Shi-Tomasi + LK sobre textura. ----
+    {
+        const cv::Point2f center(320, 260);
+        const float radius = 60.f;
+        cv::Mat frameA(520, 700, CV_8UC1);
+        cv::RNG rng(23);
+        cv::randn(frameA, cv::Scalar::all(100), cv::Scalar::all(30));
+        cv::GaussianBlur(frameA, frameA, cv::Size(0, 0), 1.0);
+
+        const cv::Point2f shiftVec(12.f, 8.f);
+        cv::Mat frameB(520, 700, CV_8UC1);
+        frameB.setTo(cv::Scalar::all(70));
+        frameA(cv::Rect(40, 40, 600, 420))
+            .copyTo(frameB(cv::Rect(40 + cvRound(shiftVec.x),
+                                    40 + cvRound(shiftVec.y), 600, 420)));
+
+        FeatureDiscDetector det({});
+        cv::Mat grayB = smooth(frameB);
+
+        // Confirmación en el frame A (captura puntos) y detección en B.
+        cv::Mat grayA = smooth(frameA);
+        DetectorContext ctxA;
+        fillContext(ctxA, grayA, center, radius);
+        det.onConfirmed(ctxA, center);
+
+        DetectorContext ctxB;
+        fillContext(ctxB, grayB, center, radius);
+        const auto cands = det.detect(ctxB);
+
+        bool ok = false;
+        for (const auto& d : cands) {
+            if (d.method == DiscMethod::Features) {
+                const float err = static_cast<float>(
+                    cv::norm((d.center - center) - shiftVec));
+                if (err < 3.0)
+                    ok = true;
+            }
+        }
+        expect(ok, "Features/LK recupera el shift con inliers");
     }
 
     if (failures == 0)

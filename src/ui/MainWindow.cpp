@@ -258,8 +258,8 @@ void MainWindow::setupUi()
         {DiscMethod::KnownRadius, true},
         {DiscMethod::PhaseCorrelation, true},
         {DiscMethod::Centroid, true},
-        {DiscMethod::Ecc, false},
-        {DiscMethod::Features, false},
+        {DiscMethod::Ecc, true},
+        {DiscMethod::Features, true},
     };
     for (const MethodEntry& e : methodEntries) {
         photoMethodCombo_->addItem(QString::fromUtf8(methodName(e.m)),

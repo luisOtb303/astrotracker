@@ -4,6 +4,8 @@
 #include "tracking/CentroidDiscDetector.h"
 #include "tracking/CircleEstimator.h"
 #include "tracking/DiscFusion.h"
+#include "tracking/EccDiscDetector.h"
+#include "tracking/FeatureDiscDetector.h"
 #include "tracking/KnownRadiusDiscDetector.h"
 #include "tracking/LimbScorer.h"
 #include "tracking/PhaseCorrelationDiscDetector.h"
@@ -59,6 +61,12 @@ void DiscTracker::rebuildDetectors()
             break;
         case DiscMethod::PhaseCorrelation:
             detectors_.emplace_back(new PhaseCorrelationDiscDetector(p_));
+            break;
+        case DiscMethod::Ecc:
+            detectors_.emplace_back(new EccDiscDetector(p_));
+            break;
+        case DiscMethod::Features:
+            detectors_.emplace_back(new FeatureDiscDetector(p_));
             break;
         default:
             break; // métodos aún sin detector implementado

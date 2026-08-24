@@ -37,17 +37,20 @@ inline TrackingProfile trackingProfileFor(ObjectProfile profile)
                        DiscMethod::Template};
         break;
     case ObjectProfile::Moon:
-        tp.priority = {DiscMethod::Template, DiscMethod::ArcBlob,
-                       DiscMethod::PhaseCorrelation};
+        tp.priority = {DiscMethod::Template, DiscMethod::Features,
+                       DiscMethod::ArcBlob, DiscMethod::PhaseCorrelation};
         break;
     case ObjectProfile::Planet:
         tp.priority = {DiscMethod::Centroid, DiscMethod::ArcBlob,
                        DiscMethod::Template};
         break;
     case ObjectProfile::SolarEclipse:
-    case ObjectProfile::LunarEclipse:
         tp.priority = {DiscMethod::KnownRadius, DiscMethod::Template,
-                       DiscMethod::ArcBlob};
+                       DiscMethod::ArcBlob, DiscMethod::Ecc};
+        break;
+    case ObjectProfile::LunarEclipse:
+        tp.priority = {DiscMethod::ArcBlob, DiscMethod::Template,
+                       DiscMethod::Features, DiscMethod::KnownRadius};
         break;
     case ObjectProfile::Auto:
         break;
