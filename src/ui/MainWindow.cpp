@@ -255,11 +255,11 @@ void MainWindow::setupUi()
     const MethodEntry methodEntries[] = {
         {DiscMethod::Template, true},
         {DiscMethod::ArcBlob, true},
-        {DiscMethod::KnownRadius, false},
-        {DiscMethod::PhaseCorrelation, false},
+        {DiscMethod::KnownRadius, true},
+        {DiscMethod::PhaseCorrelation, true},
+        {DiscMethod::Centroid, true},
         {DiscMethod::Ecc, false},
         {DiscMethod::Features, false},
-        {DiscMethod::Centroid, false},
     };
     for (const MethodEntry& e : methodEntries) {
         photoMethodCombo_->addItem(QString::fromUtf8(methodName(e.m)),

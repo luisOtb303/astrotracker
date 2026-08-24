@@ -1,9 +1,12 @@
 #include "tracking/DiscTracker.h"
 
 #include "tracking/ArcBlobDiscDetector.h"
+#include "tracking/CentroidDiscDetector.h"
 #include "tracking/CircleEstimator.h"
 #include "tracking/DiscFusion.h"
+#include "tracking/KnownRadiusDiscDetector.h"
 #include "tracking/LimbScorer.h"
+#include "tracking/PhaseCorrelationDiscDetector.h"
 #include "tracking/TemplateDiscDetector.h"
 
 #include <opencv2/imgproc.hpp>
@@ -47,6 +50,15 @@ void DiscTracker::rebuildDetectors()
             break;
         case DiscMethod::ArcBlob:
             detectors_.emplace_back(new ArcBlobDiscDetector(p_));
+            break;
+        case DiscMethod::KnownRadius:
+            detectors_.emplace_back(new KnownRadiusDiscDetector(p_));
+            break;
+        case DiscMethod::Centroid:
+            detectors_.emplace_back(new CentroidDiscDetector(p_));
+            break;
+        case DiscMethod::PhaseCorrelation:
+            detectors_.emplace_back(new PhaseCorrelationDiscDetector(p_));
             break;
         default:
             break; // métodos aún sin detector implementado

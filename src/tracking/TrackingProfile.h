@@ -24,23 +24,30 @@ struct TrackingProfile {
     std::vector<DiscMethod> priority;
 };
 
-// Cadena de prioridad predefinida de cada perfil. El perfil AUTO reproduce el
-// comportamiento histórico exacto del motor.
+// Cadena de prioridad predefinida de cada perfil. El perfil AUTO conserva el
+// comportamiento histórico (plantilla + arco); los demás activan fuentes
+// específicas del objeto.
 inline TrackingProfile trackingProfileFor(ObjectProfile profile)
 {
     TrackingProfile tp;
     tp.profile = profile;
     switch (profile) {
     case ObjectProfile::Sun:
-    case ObjectProfile::SolarEclipse:
-        tp.priority = {DiscMethod::Template, DiscMethod::ArcBlob};
+        tp.priority = {DiscMethod::ArcBlob, DiscMethod::KnownRadius,
+                       DiscMethod::Template};
         break;
     case ObjectProfile::Moon:
-    case ObjectProfile::LunarEclipse:
-        tp.priority = {DiscMethod::Template, DiscMethod::ArcBlob};
+        tp.priority = {DiscMethod::Template, DiscMethod::ArcBlob,
+                       DiscMethod::PhaseCorrelation};
         break;
     case ObjectProfile::Planet:
-        tp.priority = {DiscMethod::ArcBlob, DiscMethod::Template};
+        tp.priority = {DiscMethod::Centroid, DiscMethod::ArcBlob,
+                       DiscMethod::Template};
+        break;
+    case ObjectProfile::SolarEclipse:
+    case ObjectProfile::LunarEclipse:
+        tp.priority = {DiscMethod::KnownRadius, DiscMethod::Template,
+                       DiscMethod::ArcBlob};
         break;
     case ObjectProfile::Auto:
         break;

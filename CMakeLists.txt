@@ -50,6 +50,12 @@ add_executable(astrotracker WIN32
   src/tracking/DiscFusion.cpp
   src/tracking/TemplateDiscDetector.h
   src/tracking/TemplateDiscDetector.cpp
+  src/tracking/CentroidDiscDetector.h
+  src/tracking/CentroidDiscDetector.cpp
+  src/tracking/KnownRadiusDiscDetector.h
+  src/tracking/KnownRadiusDiscDetector.cpp
+  src/tracking/PhaseCorrelationDiscDetector.h
+  src/tracking/PhaseCorrelationDiscDetector.cpp
   src/tracking/ArcBlobDiscDetector.h
   src/tracking/ArcBlobDiscDetector.cpp
   src/tracking/TrackingProfile.h

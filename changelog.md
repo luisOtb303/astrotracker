@@ -9,6 +9,23 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ### Added
 
+- **Perfiles de seguimiento y métodos de auto-centrado (fase 1)**: nuevo dock
+  "Seguimiento" con **perfil de objeto** (Auto/Sol/Luna/Planeta/Eclipse solar/
+  Eclipse lunar) que define la cadena de prioridad de métodos, **override del
+  método principal por foto** ("Método de esta foto"), estado en vivo de la
+  foto actual (método · confianza · validez) y los ajustes de vídeo (antes en
+  la toolbar). El motor se reorganizó en detectores intercambiables
+  (`IDiscDetector`) con fusión por soporte radial del limbo; cada resultado
+  guarda **confianza y método**, visibles en la Salida, el filmstrip y el
+  proyecto. Métodos nuevos:
+  - **Radio conocido**: círculo de radio fijo sobre el contorno umbralizado,
+    aceptando arcos cortos y anillos de totalidad vía área ≈ πR² (la técnica
+    de los alineadores de eclipse); prioritario en los perfiles de eclipse.
+  - **Correlación de fase**: desplazamiento global por FFT entre el parche de
+    referencia confirmado y la ventana actual, subpíxel; fallback cuando el
+    limbo no es confirmando.
+  - **Centroide**: centroide del blob si es compatible con disco lleno
+    (planetas); rechaza crecientes.
 - **Caché de análisis para RAW**: la primera vez que se lee un CR2/CR3 (con
   demosaicing completo) se guarda una copia pequeña (JPG 1600 px) en
   `_astrotracker_cache/` junto a las fotos; la navegación, las miniaturas

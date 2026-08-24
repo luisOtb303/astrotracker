@@ -197,6 +197,12 @@ add_executable(test_disc test_disc/main.cpp
   ../src/tracking/DiscFusion.cpp
   ../src/tracking/TemplateDiscDetector.h
   ../src/tracking/TemplateDiscDetector.cpp
+  ../src/tracking/CentroidDiscDetector.h
+  ../src/tracking/CentroidDiscDetector.cpp
+  ../src/tracking/KnownRadiusDiscDetector.h
+  ../src/tracking/KnownRadiusDiscDetector.cpp
+  ../src/tracking/PhaseCorrelationDiscDetector.h
+  ../src/tracking/PhaseCorrelationDiscDetector.cpp
   ../src/tracking/ArcBlobDiscDetector.h
   ../src/tracking/ArcBlobDiscDetector.cpp
   ../src/tracking/DiscTracker.h
@@ -233,6 +239,12 @@ add_executable(test_eclipse test_eclipse/main.cpp
   ../src/tracking/DiscFusion.cpp
   ../src/tracking/TemplateDiscDetector.h
   ../src/tracking/TemplateDiscDetector.cpp
+  ../src/tracking/CentroidDiscDetector.h
+  ../src/tracking/CentroidDiscDetector.cpp
+  ../src/tracking/KnownRadiusDiscDetector.h
+  ../src/tracking/KnownRadiusDiscDetector.cpp
+  ../src/tracking/PhaseCorrelationDiscDetector.h
+  ../src/tracking/PhaseCorrelationDiscDetector.cpp
   ../src/tracking/ArcBlobDiscDetector.h
   ../src/tracking/ArcBlobDiscDetector.cpp
   ../src/tracking/DiscTracker.h
@@ -293,3 +305,29 @@ target_compile_definitions(test_project PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(test_project PRIVATE Qt6::Core ${OpenCV_LIBS})
 
 add_test(NAME test_project COMMAND test_project)
+# Tests sintéticos de los detectores de disco (KnownRadius, Centroid,
+# PhaseCorrelation) y de la fusión por soporte radial.
+
+add_executable(test_detectors test_detectors/main.cpp
+  ../src/motion/TrackStatus.h
+  ../src/tracking/DiscDetection.h
+  ../src/tracking/IDiscDetector.h
+  ../src/tracking/DiscTrackerParams.h
+  ../src/tracking/DiscArcFit.h
+  ../src/tracking/DiscArcFit.cpp
+  ../src/tracking/LimbScorer.h
+  ../src/tracking/LimbScorer.cpp
+  ../src/tracking/DiscFusion.h
+  ../src/tracking/DiscFusion.cpp
+  ../src/tracking/KnownRadiusDiscDetector.h
+  ../src/tracking/KnownRadiusDiscDetector.cpp
+  ../src/tracking/CentroidDiscDetector.h
+  ../src/tracking/CentroidDiscDetector.cpp
+  ../src/tracking/PhaseCorrelationDiscDetector.h
+  ../src/tracking/PhaseCorrelationDiscDetector.cpp)
+
+target_include_directories(test_detectors PRIVATE ../src)
+target_compile_definitions(test_detectors PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_detectors PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_detectors COMMAND test_detectors)
