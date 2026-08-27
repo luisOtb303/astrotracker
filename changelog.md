@@ -34,6 +34,19 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   entradas llevan versión para regenerarse si cambia el procesado; medido en
   el banco del eclipse: segunda pasada ~6× más rápida). La exportación sigue
   usando la resolución completa original.
+- **Motor Disco unificado en modo Vídeo**: el pipeline de vídeo ahora puede
+  usar el motor `DiscTracker` (el mismo del modo Fotos) sin necesidad de
+  dibujar ROI; el modo automático estima radio y centro desde el mayor blob
+  del primer frame (estimación de área + barrido de arco), y los detectores
+  del perfil seleccionado (Template, ArcBlob, PhaseCorrelation, Ecc, Features,
+  KnownRadius, Centroid) se aplican frame a frame con fusión por soporte del
+  limbo.
+- **Botones de vídeo en el dock**: Seguir, Vista previa y Exportar ahora viven
+  en el dock "Seguimiento" > Vídeo como botones con icono, sin toolbar
+  dedicada.
+- **Selector "Disco (perfil)" en el combo de tracker de vídeo**: permite usar
+  el motor de Fotos con el perfil activo (Sol, Luna, Planeta, Eclipse, etc.)
+  directamente desde el modo vídeo.
 
 ### Fixed
 
@@ -49,6 +62,10 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   y las fotos mucho más oscuras que la primera (totalidad del eclipse) se
   saturaban hasta verse pixeladas. Ahora el ajuste se limita a ×3 como máximo
   y la Salida avisa cuando se recorta.
+- **Siembra automática robusta**: la detección inicial en el primer frame del
+  modo Disco ahora estima el radio del disco desde el área del blob (mucho más
+  preciso que un porcentaje fijo del ancho de imagen), evitando desalineaciones
+  significativas en discos pequeños o alejados.
 
 ## [0.2.0] - 2026-08-21
 

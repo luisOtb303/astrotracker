@@ -38,6 +38,7 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QTime>
 #include <algorithm>
@@ -154,19 +155,22 @@ void MainWindow::setupUi()
     tb->addAction(style()->standardIcon(QStyle::SP_MediaStop),
                   tr("Detener"), this, &MainWindow::stop);
 
-    QToolBar* stabTb = addToolBar(tr("Estabilización"));
-    stabTb->setMovable(false);
+    // (La toolbar de estabilización desaparece: sus controles viven ahora en
+    // el dock "Seguimiento" > Vídeo, junto al resto de ajustes.)
 
-    analyzeAction_ = stabTb->addAction(tr("Seguir"), this, &MainWindow::startAnalyze);
-    analyzeAction_->setToolTip(tr("Analizar el vídeo: seguir el objeto y calcular desplazamientos"));
-    previewAction_ = stabTb->addAction(tr("Vista previa"), this, &MainWindow::togglePreview);
+    // Acciones de vídeo: los botones viven en el dock "Seguimiento" > Vídeo.
+    analyzeAction_ = new QAction(tr("Seguir"), this);
+    analyzeAction_->setToolTip(
+        tr("Analizar el vídeo: seguir el objeto y calcular desplazamientos "
+           "(dibuja una ROI o deja que detecte el disco automáticamente)"));
+    connect(analyzeAction_, &QAction::triggered, this, &MainWindow::startAnalyze);
+    previewAction_ = new QAction(tr("Vista previa"), this);
     previewAction_->setCheckable(true);
     previewAction_->setToolTip(tr("Mostrar los frames estabilizados"));
-    exportAction_ = stabTb->addAction(tr("Exportar..."), this, &MainWindow::startExport);
+    connect(previewAction_, &QAction::toggled, this, &MainWindow::togglePreview);
+    exportAction_ = new QAction(tr("Exportar..."), this);
     exportAction_->setToolTip(tr("Estabilizar y guardar el vídeo de salida"));
-
-    connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int) { showCurrentFrame(); });
+    connect(exportAction_, &QAction::triggered, this, &MainWindow::startExport);
 
     tabs_ = new QTabWidget(this);
     tabs_->addTab(createVideoPage(), tr("Vídeo"));
@@ -287,7 +291,9 @@ void MainWindow::setupUi()
     trackerCombo_ = new QComboBox(videoGroup);
     trackerCombo_->addItem(tr("Template"));
     trackerCombo_->addItem(tr("Centroid"));
-    trackerCombo_->setToolTip(tr("Algoritmo de seguimiento"));
+    trackerCombo_->addItem(tr("Disco (perfil)"));
+    trackerCombo_->setToolTip(tr("Algoritmo de seguimiento. \"Disco (perfil)\" usa "
+                                 "el motor del modo Fotos con el perfil elegido arriba"));
     videoLay->addWidget(trackerCombo_);
     videoLay->addWidget(new QLabel(tr("Borde"), videoGroup));
     borderCombo_ = new QComboBox(videoGroup);
@@ -302,6 +308,21 @@ void MainWindow::setupUi()
     smoothSpin_->setValue(0.3);
     smoothSpin_->setToolTip(tr("Suavizado (alpha EMA) del centro del objeto"));
     videoLay->addWidget(smoothSpin_);
+
+    auto* videoBtnRow = new QHBoxLayout();
+    auto* seguirBtn = new QToolButton(videoGroup);
+    seguirBtn->setDefaultAction(analyzeAction_);
+    auto* previewBtn = new QToolButton(videoGroup);
+    previewBtn->setDefaultAction(previewAction_);
+    auto* exportBtn = new QToolButton(videoGroup);
+    exportBtn->setDefaultAction(exportAction_);
+    videoBtnRow->addWidget(seguirBtn);
+    videoBtnRow->addWidget(previewBtn);
+    videoLay->addLayout(videoBtnRow);
+    videoLay->addWidget(exportBtn);
+
+    connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { showCurrentFrame(); });
 
     dockLay->addWidget(photosGroup);
     dockLay->addWidget(videoGroup);
@@ -534,7 +555,8 @@ void MainWindow::openPath(const QString& path)
     updateStabilizationUi();
     refreshProjectUi();
     statusBar()->showMessage(
-        tr("Abierto: %1  (%2x%3, %4 fps, %5 frames)")
+        tr("Abierto: %1  (%2x%3, %4 fps, %5 frames)  ·  Dibuja una ROI sobre el "
+           "objeto o pulsa Seguir (detección automática)")
             .arg(path)
             .arg(reader_->width())
             .arg(reader_->height())
@@ -635,14 +657,21 @@ void MainWindow::onRoiSelected(const QRect& rect)
 
 void MainWindow::startAnalyze()
 {
-    if (!reader_ || roi_.isEmpty() || worker_)
+    if (!reader_ || worker_)
         return;
+    const PipelineSettings st = currentSettings();
+    if (st.tracker != TrackerType::Disc && roi_.isEmpty()) {
+        statusBar()->showMessage(
+            tr("Dibuja una ROI sobre el objeto antes de seguir "
+               "(el tracker \"Disco\" sí puede detectarlo automáticamente)"), 6000);
+        return;
+    }
 
     PipelineWorker::Request req;
     req.mode = PipelineWorker::Mode::Analyze;
     req.inPath = inPath_;
     req.roi = cv::Rect2f(roi_.x(), roi_.y(), roi_.width(), roi_.height());
-    req.settings = currentSettings();
+    req.settings = st;
     req.startUs = startUs_;
     launchWorker(req);
 }
@@ -782,7 +811,7 @@ void MainWindow::onLogMessage(int level, const QString& text)
 
 void MainWindow::updateStabilizationUi()
 {
-    const bool canTrack = reader_ != nullptr && !roi_.isEmpty() && worker_ == nullptr;
+    const bool canTrack = reader_ != nullptr && worker_ == nullptr;
     analyzeAction_->setEnabled(canTrack);
     exportAction_->setEnabled(canTrack && !offsets_.empty());
     previewAction_->setEnabled(!offsets_.empty());
@@ -805,8 +834,12 @@ void MainWindow::updateTransportUi()
 PipelineSettings MainWindow::currentSettings() const
 {
     PipelineSettings s;
-    s.tracker = (trackerCombo_->currentIndex() == 1) ? TrackerType::Centroid
-                                                     : TrackerType::Template;
+    const int idx = trackerCombo_->currentIndex();
+    s.tracker = (idx == 2)   ? TrackerType::Disc
+                : (idx == 1) ? TrackerType::Centroid
+                             : TrackerType::Template;
+    if (s.tracker == TrackerType::Disc)
+        s.profile = photosPanel_->trackingProfile().profile;
     s.searchFactor = 2.5f;
     s.smoothingAlpha = static_cast<float>(smoothSpin_->value());
     s.borderMode = (borderCombo_->currentIndex() == 1) ? BorderMode::Replicate

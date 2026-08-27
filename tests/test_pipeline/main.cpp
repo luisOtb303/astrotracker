@@ -95,8 +95,38 @@ int main(int argc, char** argv)
     expect(n == 40, "la salida conserva los 40 frames (nunca se descartan)");
     expect(maxDev <= 5, "objeto centrado en todos los frames de salida");
     std::printf("maxDesviación=%dpx\n", maxDev);
-
     std::remove(outPath.c_str());
+
+    // ---- Escenario 2: motor unificado (Disc) SIN ROI, siembra automática. ----
+    PipelineSettings discSettings;
+    discSettings.tracker = TrackerType::Disc;
+    discSettings.profile = ObjectProfile::Moon;
+    const std::string outPath2 = outPath + ".disc.mp4";
+    PipelineStats s2;
+    if (!pipeline.run(inPath, outPath2, cv::Rect2f(), discSettings, &s2)) {
+        std::printf("FAIL: el pipeline (Disc, sin ROI) no completó\n");
+        return 1;
+    }
+    expect(s2.frames == 40, "Disc: se procesaron 40 frames");
+
+    if (!reader.open(outPath2)) {
+        std::printf("FAIL: no se pudo releer la salida Disc\n");
+        return 1;
+    }
+    n = 0;
+    maxDev = 0;
+    while (reader.readNext(f)) {
+        const cv::Point2f c = centroid(f.image);
+        const int dev = static_cast<int>(std::lround(cv::norm(c - expectedCenter)));
+        if (dev > maxDev)
+            maxDev = dev;
+        ++n;
+    }
+    expect(n == 40, "Disc: la salida conserva los 40 frames");
+    expect(maxDev <= 5, "Disc: objeto centrado en todos los frames");
+    std::printf("maxDesviación(Disc)=%dpx\n", maxDev);
+    std::remove(outPath2.c_str());
+
     std::remove(inPath.c_str());
 
     if (failures == 0) {

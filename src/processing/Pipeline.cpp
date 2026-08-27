@@ -1,6 +1,9 @@
 #include "processing/Pipeline.h"
 
 #include "processing/FrameTransformer.h"
+#include "tracking/ArcBlobDiscDetector.h"
+#include "tracking/DiscArcFit.h"
+#include "tracking/DiscTracker.h"
 #include "tracking/ITracker.h"
 #include "tracking/TemplateTracker.h"
 #include "tracking/CentroidTracker.h"
@@ -9,6 +12,8 @@
 #include "video/FFmpegVideoReader.h"
 #include "video/FFmpegVideoWriter.h"
 
+#include <opencv2/imgproc.hpp>
+#include <algorithm>
 #include <cmath>
 #include <memory>
 
@@ -31,7 +36,14 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
     std::vector<cv::Point2f> offsets;
 
     FFmpegVideoReader reader;
-    if (!reader.open(inPath) || roi.width < 4.f || roi.height < 4.f)
+    if (!reader.open(inPath))
+        return offsets;
+
+    // Motor unificado (Disc): ROI opcional como semilla; sin ROI, detección
+    // automática del disco en el primer frame. Los motores clásicos exigen ROI.
+    const bool useDisc = settings.tracker == TrackerType::Disc;
+    const bool roiValid = roi.width >= 4.f && roi.height >= 4.f;
+    if (!useDisc && !roiValid)
         return offsets;
 
     const int64_t total = reader.frameCount();
@@ -42,19 +54,70 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
     if (!reader.readNext(frame))
         return offsets;
 
-    std::unique_ptr<ITracker> tracker;
-    if (settings.tracker == TrackerType::Centroid)
-        tracker = std::make_unique<CentroidTracker>(settings.searchFactor);
-    else
-        tracker = std::make_unique<TemplateTracker>(settings.searchFactor);
-    if (!tracker->init(frame.image, roi))
-        return offsets;
+    std::unique_ptr<ITracker> classicTracker;
+    std::unique_ptr<DiscTracker> discTracker;
+    cv::Point2f objectCenter;
+
+    if (useDisc) {
+        discTracker = std::make_unique<DiscTracker>();
+        if (roiValid) {
+            discTracker->init({roi.x + roi.width * 0.5f, roi.y + roi.height * 0.5f},
+                              0.5f * std::min(roi.width, roi.height));
+            objectCenter = rectCenter(roi);
+        } else {
+            // Siembra automática: estima el radio desde el área del mayor
+           // blob (mucho más fiable que un porcentaje del ancho) y afina
+            // con el barrido de radio.
+            cv::Mat gray;
+            cv::cvtColor(frame.image, gray, cv::COLOR_BGR2GRAY);
+            cv::GaussianBlur(gray, gray, cv::Size(0, 0), 1.2);
+            const cv::Rect full(0, 0, gray.cols, gray.rows);
+            float guess = std::max(20.f, 0.10f * gray.cols);
+            cv::Point2f prior(gray.cols * 0.5f, gray.rows * 0.5f);
+            {
+                cv::Point2f blobC;
+                int area = 0, bw = 0, bh = 0;
+                if (DiscArcFit::blobInfo(gray, full, blobC, area, bw, bh) &&
+                    area > 100 && bw > 8 && bh > 8) {
+                    const float aspect =
+                        static_cast<float>(bw) / static_cast<float>(bh);
+                    if (aspect > 0.4f && aspect < 2.5f) {
+                        guess = std::clamp(
+                            std::sqrt(static_cast<float>(area) /
+                                      static_cast<float>(CV_PI)),
+                            10.f, 0.45f * std::min(gray.cols, gray.rows));
+                        prior = blobC;
+                    }
+                }
+            }
+            const DiscArcEstimate seed =
+                DiscArcFit::fitDisc(gray, full, prior, guess, 3.f);
+            if (!seed.ok || seed.radius <= 0.f ||
+                cv::norm(seed.center - prior) > 2.0f * guess)
+                return offsets; // no se encontró disco creíble
+            discTracker->init(seed.center, seed.radius);
+            objectCenter = seed.center;
+        }
+        discTracker->setProfile(trackingProfileFor(settings.profile));
+    } else {
+        if (settings.tracker == TrackerType::Centroid)
+            classicTracker = std::make_unique<CentroidTracker>(settings.searchFactor);
+        else
+            classicTracker = std::make_unique<TemplateTracker>(settings.searchFactor);
+        if (!classicTracker->init(frame.image, roi))
+            return offsets;
+        objectCenter = rectCenter(roi);
+    }
 
     MotionModel model;
     Stabilizer stabilizer;
-    model.reset(rectCenter(roi));
-    stabilizer.reset(cv::Size(frame.image.cols, frame.image.rows), rectCenter(roi));
+    model.reset(rectCenter(roiValid ? roi : cv::Rect2f()));
+    stabilizer.reset(cv::Size(frame.image.cols, frame.image.rows), objectCenter);
     stabilizer.setSmoothing(settings.smoothingAlpha);
+    // DiscTracker ya suaviza internamente con su propio modelo de movimiento:
+    // aplicar el EMA del estabilizador encima doblaría el retraso.
+    if (discTracker)
+        stabilizer.setSmoothing(1.0f);
     if (settings.target.x >= 0.f && settings.target.y >= 0.f)
         stabilizer.setTarget(TargetPosition{settings.target});
 
@@ -63,18 +126,37 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
     double confSum = 0.0;
 
     do {
-        const TrackResult r = tracker->track(frame.image);
-        const cv::Point2f center = r.found ? rectCenter(r.rect) : model.position();
-        model.update(r.found, center);
-        offsets.push_back(stabilizer.update(model.position()));
+        float confidence = 0.f;
+        int bucket = 0; // 0 válida, 1 incierta, 2 perdida
+        cv::Point2f current;
+        if (discTracker) {
+            const DiscTrack t = discTracker->track(frame.image);
+            current = t.center;
+            confidence = t.confidence;
+            if (!t.predicted && t.status == TrackStatus::VALID)
+                bucket = 0;
+            else if (t.predicted && t.status == TrackStatus::LOST)
+                bucket = 2;
+            else
+                bucket = 1;
+        } else {
+            const TrackResult r = classicTracker->track(frame.image);
+            current = r.found ? rectCenter(r.rect) : model.position();
+            model.update(r.found, current);
+            confidence = r.confidence;
+            bucket = r.found ? 0
+                             : (model.status() == TrackStatus::UNCERTAIN ? 1 : 2);
+            current = model.position();
+        }
 
-        if (r.found)
+        offsets.push_back(stabilizer.update(current));
+        if (bucket == 0)
             ++s.valid;
-        else if (model.status() == TrackStatus::UNCERTAIN)
+        else if (bucket == 1)
             ++s.uncertain;
         else
             ++s.lost;
-        confSum += r.confidence;
+        confSum += confidence;
         ++count;
         if (progress)
             progress(count, static_cast<int>(total > 0 ? total : count));

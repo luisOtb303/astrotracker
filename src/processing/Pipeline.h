@@ -1,23 +1,28 @@
 #pragma once
 
 #include "processing/BorderHandler.h"
+#include "tracking/TrackingProfile.h"
 
 #include <opencv2/core.hpp>
 #include <functional>
 #include <string>
 #include <vector>
 
-// Tipo de tracker usado por el pipeline.
+// Tipo de tracker usado por el pipeline. Disc = motor unificado del modo
+// Fotos (DiscTracker con perfiles y detectores); funciona sobre el frame
+// completo y permite ROI opcional como semilla.
 enum class TrackerType
 {
     Template,
-    Centroid
+    Centroid,
+    Disc
 };
 
 // Parámetros ajustables del pipeline (editables en la UI antes de procesar).
 struct PipelineSettings
 {
     TrackerType tracker = TrackerType::Template;
+    ObjectProfile profile = ObjectProfile::Auto; // solo con TrackerType::Disc
     float searchFactor = 2.5f;
     float smoothingAlpha = 0.3f;
     BorderMode borderMode = BorderMode::Black;

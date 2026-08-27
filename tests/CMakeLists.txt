@@ -101,6 +101,34 @@ add_executable(test_pipeline test_pipeline/main.cpp
   ../src/video/IVideoWriter.h
   ../src/video/FFmpegVideoWriter.h
   ../src/video/FFmpegVideoWriter.cpp
+  ../src/tracking/DiscDetection.h
+  ../src/tracking/DiscFusion.h
+  ../src/tracking/DiscFusion.cpp
+  ../src/tracking/DiscTracker.h
+  ../src/tracking/DiscTracker.cpp
+  ../src/tracking/DiscArcFit.h
+  ../src/tracking/DiscArcFit.cpp
+  ../src/tracking/DiscTrackerParams.h
+  ../src/tracking/EccDiscDetector.h
+  ../src/tracking/EccDiscDetector.cpp
+  ../src/tracking/FeatureDiscDetector.h
+  ../src/tracking/FeatureDiscDetector.cpp
+  ../src/tracking/KnownRadiusDiscDetector.h
+  ../src/tracking/KnownRadiusDiscDetector.cpp
+  ../src/tracking/CentroidDiscDetector.h
+  ../src/tracking/CentroidDiscDetector.cpp
+  ../src/tracking/PhaseCorrelationDiscDetector.h
+  ../src/tracking/PhaseCorrelationDiscDetector.cpp
+  ../src/tracking/LimbScorer.h
+  ../src/tracking/LimbScorer.cpp
+  ../src/tracking/ArcBlobDiscDetector.h
+  ../src/tracking/ArcBlobDiscDetector.cpp
+  ../src/tracking/TemplateDiscDetector.h
+  ../src/tracking/TemplateDiscDetector.cpp
+  ../src/tracking/TrackingProfile.h
+  ../src/tracking/CircleEstimator.h
+  ../src/tracking/CircleEstimator.cpp
+  ../src/tracking/IDiscDetector.h
   ../src/tracking/ITracker.h
   ../src/tracking/TemplateTracker.h
   ../src/tracking/TemplateTracker.cpp
