@@ -25,6 +25,11 @@ pero resolviendo un problema que PIPP no cubre bien.
   ajustas parámetros sobre un preview; no es un pipeline de 27 parámetros.
 - **Tracking robusto**: TemplateTracker y CentroidTracker como núcleo, Kalman
   (x, y, vx, vy), estados VALID / UNCERTAIN / LOST, re-adquisición y predicción.
+  En modo Vídeo, el selector **"Disco (perfil)"** usa el motor unificado de Fotos
+  (DiscTracker) con detección automática sin ROI: estima radio y centro desde el
+  mayor blob del primer frame y aplica los detectores del perfil activo (Template,
+  ArcBlob, PhaseCorrelation, Ecc, Features, KnownRadius, Centroid) con fusión por
+  soporte del limbo.
 - **Estabilización por traslación** (XY) con centrado del objeto en un punto
   objetivo configurable.
 - **Dos pasadas**: analizar/seguir y después aplicar/codificar, con preview de un
@@ -174,7 +179,12 @@ src/
   video/        IVideoReader/IVideoWriter, FFmpegVideoReader/Writer, SERReader/Writer
   stills/       PhotoSequenceReader (secuencias de fotos; RAW vía LibRaw)
   raw/          RawDecoder (LibRaw: CR2/CR3, DNG, NEF, ARW…)
-  tracking/     ITracker, TemplateTracker, CentroidTracker, OpticalFlowTracker, HybridTracker
+  tracking/     ITracker, TemplateTracker, CentroidTracker, DiscTracker,
+                IDiscDetector, TemplateDiscDetector, ArcBlobDiscDetector,
+                KnownRadiusDiscDetector, CentroidDiscDetector,
+                PhaseCorrelationDiscDetector, EccDiscDetector,
+                FeatureDiscDetector, DiscFusion, LimbScorer, DiscArcFit,
+                TrackingProfile
   motion/       MotionModel, Kalman, TrackStatus (VALID/UNCERTAIN/LOST)
   stabilization/ Stabilizer, TargetPosition, SmoothingFilter
   processing/   Pipeline, FrameTransformer, BorderHandler, Preprocessor
@@ -206,9 +216,9 @@ compatibles: FFmpeg (GPL), Qt (LGPLv3/GPLv3), OpenCV (Apache-2.0), vid.stab
 
 ## Estado
 
-En desarrollo (Fase 6). Completado: visor de vídeo, núcleo de tracking,
+En desarrollo (Fase 7). Completado: visor de vídeo, núcleo de tracking,
 estabilización por traslación (Fase 3), pipeline de dos pasadas con exportación
-FFmpeg (Fase 4), estabilización desde la UI (Fase 5) y el modo "Fotos" (Fase 6):
+FFmpeg (Fase 4), estabilización desde la UI (Fase 5), el modo "Fotos" (Fase 6):
 pestaña separada con filmstrip de miniaturas, dos visores (original / centrado),
 navegación y apertura por carpeta o multi-selección, con lectura de
 JPG/PNG/TIFF/BMP y RAW (**CR2/CR3 y demás formatos de LibRaw**, vendido en
@@ -222,8 +232,12 @@ visual" (círculo discontinuo), **carga asíncrona de fotos** sin bloquear la UI
 **círculo por foto dibujado en las miniaturas**, correcciones manuales que el
 recálculo automático respeta, y **exportación de la secuencia centrada**
 (fotos JPG/PNG y MP4 con **suavizado de transiciones**: intermedios con morph +
-normalización de brillo). Pendiente en Fase 6: la política "preguntar (pausa)"
-de oclusión.
+normalización de brillo), **perfiles de seguimiento** (Auto/Sol/Luna/Planeta/
+Eclipse solar/Eclipse lunar) con cadena de prioridad de métodos, **override del
+método por foto**, y dock "Seguimiento" con ajustes de perfil y vídeo. En modo
+Vídeo: **motor Disco unificado** (sin ROI, detección automática del objeto en el
+primer frame) con el mismo motor de Fotos, y botones Seguir/Vista previa/Exportar
+en el dock. Pendiente en Fase 7: la política "preguntar (pausa)" de oclusión.
 
 No está fuera del alcance actual: tratamiento de exposición/curvas tipo
 darktable/lightroom (fase posterior).
