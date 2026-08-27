@@ -7,6 +7,20 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-27
+
+### Fixed
+
+- **Dark theme no se aplicaba al iniciar**: `ThemeManager::setTheme()` tenía un
+  guard temprano (`if (currentTheme_ == theme) return`) que abortaba sin llamar
+  a `applyTheme()` cuando el tema por defecto (Dark) coincidía con el solicitado.
+  Ahora se aplica siempre en la primera llamada.
+- **Información EXIF no aparecía al cargar fotos**: `InfoPanel::setExifInfo()`
+  existía pero nunca se conectaba a la selección de fotos. Ahora
+  `PhotoPanel` emite `photoExifChanged` al cambiar de foto y MainWindow lo
+  enruta a `InfoPanel`, que muestra cámara, lente, focal, apertura, Obturador,
+  ISO, fecha y dimensiones.
+
 ## [0.3.0] - 2026-08-27
 
 ### Added

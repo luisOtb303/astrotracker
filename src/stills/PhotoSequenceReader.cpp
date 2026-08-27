@@ -1,6 +1,11 @@
 #include "stills/PhotoSequenceReader.h"
 
 #include "raw/RawDecoder.h"
+#include "raw/RawExifReader.h"
+
+#ifdef ASTROTRACKER_HAS_QT_EXIF
+#include "stills/ExifReader.h"
+#endif
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -329,4 +334,21 @@ int PhotoSequenceReader::compareNatural(const std::string& a, const std::string&
     if (j < b.size())
         return -1;
     return 0;
+}
+
+PhotoExifInfo PhotoSequenceReader::exifInfo(int64_t idx) const
+{
+    if (idx < 0 || idx >= static_cast<int64_t>(paths_.size()))
+        return {};
+
+    const std::string path = paths_[static_cast<size_t>(idx)];
+
+    if (isRawExt(path))
+        return RawExifReader::readExif(path);
+
+#ifdef ASTROTRACKER_HAS_QT_EXIF
+    return ExifReader::readExif(path);
+#else
+    return {};
+#endif
 }

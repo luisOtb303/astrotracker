@@ -13,20 +13,33 @@
 class VideoView;
 class PhotoPanel;
 class IVideoReader;
-class QComboBox;
-class QDoubleSpinBox;
-class QGroupBox;
-class QLabel;
-class QProgressBar;
-class QPushButton;
-class QSlider;
-class QTabWidget;
 class QTimer;
 class QAction;
 class QMenu;
 class QDockWidget;
 class QPlainTextEdit;
 class QCheckBox;
+class QTabWidget;
+class QProgressBar;
+class QComboBox;
+class QDoubleSpinBox;
+class QLabel;
+class QPushButton;
+class QGroupBox;
+
+// New UI components
+class ThemeManager;
+class ViewportWidget;
+class PanelManager;
+class InputPanel;
+class ObjectPanel;
+class TrackingPanel;
+class TransformPanel;
+class ExportPanel;
+class InfoPanel;
+class TimelineWidget;
+class TransportBar;
+class FilmstripWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -36,7 +49,6 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    // Abre un vídeo desde la línea de comandos.
     void openPath(const QString& path);
 
 protected:
@@ -61,7 +73,6 @@ private slots:
     void onWorkerFinished();
     void onLogMessage(int level, const QString& text);
 
-    // Proyecto (.atracker): abrir, cerrar, guardar y guardar como.
     void openProjectDialog();
     void closeProject();
     void saveProjectTriggered();
@@ -80,13 +91,13 @@ private:
     void showCurrentFrame();
     void updateTransportUi();
     void updateStabilizationUi();
+    void updatePanelMode();
     QString formatTime(int64_t us) const;
     PipelineSettings currentSettings() const;
     cv::Mat displayFrame(const cv::Mat& src, int64_t frameIndex) const;
     void launchWorker(const PipelineWorker::Request& req);
     void setBusy(bool busy);
 
-    // Gestión del proyecto: estado combinado de las pestañas Vídeo y Fotos.
     PhotoProject collectProject() const;
     PhotoProjectVideo collectVideo() const;
     void applyVideo(const PhotoProjectVideo& v);
@@ -102,29 +113,39 @@ private:
     void rememberProjectPath(const QString& path);
     void refreshProjectUi();
 
+    // --- Old widgets (still used internally, will be wrapped by new components) ---
     VideoView* view_ = nullptr;
     VideoView* resultView_ = nullptr;
     PhotoPanel* photosPanel_ = nullptr;
     QTabWidget* tabs_ = nullptr;
-    QLabel* frameLabel_ = nullptr;
-    QLabel* timeLabel_ = nullptr;
-    QSlider* slider_ = nullptr;
     QTimer* timer_ = nullptr;
     QAction* playAction_ = nullptr;
     QToolBar* transportToolBar_ = nullptr;
     QAction* analyzeAction_ = nullptr;
     QAction* previewAction_ = nullptr;
     QAction* exportAction_ = nullptr;
-    QComboBox* trackerCombo_ = nullptr;
-    QComboBox* borderCombo_ = nullptr;
-    QDoubleSpinBox* smoothSpin_ = nullptr;
+
+    // --- New UI components ---
+    ViewportWidget* originalViewport_ = nullptr;
+    ViewportWidget* resultViewport_ = nullptr;
+    PanelManager* panelManager_ = nullptr;
+    InputPanel* inputPanel_ = nullptr;
+    ObjectPanel* objectPanel_ = nullptr;
+    TrackingPanel* trackingPanel_ = nullptr;
+    TransformPanel* transformPanel_ = nullptr;
+    ExportPanel* exportPanel_ = nullptr;
+    InfoPanel* infoPanel_ = nullptr;
+    TimelineWidget* timeline_ = nullptr;
+    TransportBar* transportBar_ = nullptr;
+
+    // Log dock (kept from old design)
     QProgressBar* progressBar_ = nullptr;
     QDockWidget* logDock_ = nullptr;
     QPlainTextEdit* logView_ = nullptr;
     QCheckBox* debugCheck_ = nullptr;
     QAction* logDockAction_ = nullptr;
 
-    // Proyecto (.atracker)
+    // Project actions
     QAction* openProjectAction_ = nullptr;
     QAction* closeProjectAction_ = nullptr;
     QAction* saveProjectAction_ = nullptr;
@@ -133,9 +154,12 @@ private:
     bool projectDirty_ = false;
     QStringList recentProjects_;
 
-    // Dock "Seguimiento": perfiles/métodos de Fotos y ajustes de Vídeo
-    QDockWidget* trackDock_ = nullptr;
+    // Old tracking dock widgets (kept for backward compatibility during refactor)
+    QComboBox* trackerCombo_ = nullptr;
+    QComboBox* borderCombo_ = nullptr;
+    QDoubleSpinBox* smoothSpin_ = nullptr;
     QComboBox* profileCombo_ = nullptr;
+    QDockWidget* trackDock_ = nullptr;
     QComboBox* photoMethodCombo_ = nullptr;
     QLabel* photoStatusLabel_ = nullptr;
     QPushButton* clearOverrideBtn_ = nullptr;

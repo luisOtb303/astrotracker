@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/PhotoExifInfo.h"
 #include <opencv2/core.hpp>
 #include <mutex>
 #include <string>
@@ -42,6 +43,9 @@ public:
     std::string filePath(int64_t idx) const;
     int width() const { return width_; }
     int height() const { return height_; }
+
+    // EXIF metadata for a specific photo (cached).
+    PhotoExifInfo exifInfo(int64_t idx) const;
 
 private:
     static bool isSupported(const std::string& path);

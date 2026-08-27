@@ -70,6 +70,8 @@ signals:
     void profileChanged(ObjectProfile profile);
     // Texto de estado de la foto actual ("arco · 82% · válida") para el dock.
     void photoStatusChanged(const QString& statusText);
+    // EXIF de la foto actual cambió (cuando se selecciona otra foto).
+    void photoExifChanged(const PhotoExifInfo& exif);
 
 private slots:
     void onItemActivated(QListWidgetItem* item);

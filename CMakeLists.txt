@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AstroTracker VERSION 0.3.0 LANGUAGES CXX)
+project(AstroTracker VERSION 0.3.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,12 +18,28 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil swscale)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED)
+find_package(PkgConfig)
+if(PkgConfig_FOUND)
+  pkg_check_modules(EXIV2 IMPORTED_TARGET exiv2)
+endif()
+if(NOT EXIV2_FOUND)
+  find_path(EXIV2_INCLUDE_DIR exiv2/version.hpp)
+  find_library(EXIV2_LIBRARY NAMES exiv2)
+  if(EXIV2_INCLUDE_DIR AND EXIV2_LIBRARY)
+    set(EXIV2_FOUND TRUE)
+    add_library(EXIV2::EXIV2 UNKNOWN IMPORTED)
+    set_target_properties(EXIV2::EXIV2 PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${EXIV2_INCLUDE_DIR}"
+      IMPORTED_LOCATION "${EXIV2_LIBRARY}")
+  endif()
+endif()
 add_subdirectory(third_party/libraw)
 
 add_executable(astrotracker WIN32
   src/app/main.cpp
   src/common/Frame.h
   src/common/CircleF.h
+  src/common/PhotoExifInfo.h
   src/video/IVideoReader.h
   src/video/FFmpegVideoReader.h
   src/video/FFmpegVideoReader.cpp
@@ -33,6 +49,40 @@ add_executable(astrotracker WIN32
   src/ui/MainWindow.cpp
   src/ui/AboutDialog.h
   src/ui/AboutDialog.cpp
+  src/ui/theme/ThemeManager.h
+  src/ui/theme/ThemeManager.cpp
+  src/ui/viewport/TrackingOverlay.h
+  src/ui/viewport/TrackingOverlay.cpp
+  src/ui/viewport/ZoomController.h
+  src/ui/viewport/ZoomController.cpp
+  src/ui/viewport/ViewportWidget.h
+  src/ui/viewport/ViewportWidget.cpp
+  src/ui/panels/PanelManager.h
+  src/ui/panels/PanelManager.cpp
+  src/ui/panels/InputPanel.h
+  src/ui/panels/InputPanel.cpp
+  src/ui/panels/ObjectPanel.h
+  src/ui/panels/ObjectPanel.cpp
+  src/ui/panels/TrackingPanel.h
+  src/ui/panels/TrackingPanel.cpp
+  src/ui/panels/TransformPanel.h
+  src/ui/panels/TransformPanel.cpp
+  src/ui/panels/ExportPanel.h
+  src/ui/panels/ExportPanel.cpp
+  src/ui/panels/InfoPanel.h
+  src/ui/panels/InfoPanel.cpp
+  src/ui/timeline/TimelineWidget.h
+  src/ui/timeline/TimelineWidget.cpp
+  src/ui/timeline/TransportBar.h
+  src/ui/timeline/TransportBar.cpp
+  src/ui/timeline/FilmstripWidget.h
+  src/ui/timeline/FilmstripWidget.cpp
+  src/ui/dialogs/ExportDialog.h
+  src/ui/dialogs/ExportDialog.cpp
+  src/ui/dialogs/TrackingLostDialog.h
+  src/ui/dialogs/TrackingLostDialog.cpp
+  src/ui/shortcuts/ShortcutManager.h
+  src/ui/shortcuts/ShortcutManager.cpp
   resources/resources.qrc
   ${CMAKE_CURRENT_BINARY_DIR}/app.rc
   src/tracking/ITracker.h
@@ -99,8 +149,12 @@ add_executable(astrotracker WIN32
   src/stills/PhotoExportWorker.cpp
   src/stills/PhotoProject.h
   src/stills/PhotoProject.cpp
+  src/stills/ExifReader.h
+  src/stills/ExifReader.cpp
   src/raw/RawDecoder.h
   src/raw/RawDecoder.cpp
+  src/raw/RawExifReader.h
+  src/raw/RawExifReader.cpp
   src/ui/PhotoPanel.h
   src/ui/PhotoPanel.cpp
   src/ui/PhotoFilmstrip.h
@@ -125,7 +179,8 @@ target_compile_definitions(astrotracker PRIVATE
   NOMINMAX WIN32_LEAN_AND_MEAN
   ASTROTRACKER_VERSION="${PROJECT_VERSION}"
   ASTROTRACKER_BUILD_TYPE="$<CONFIG>"
-  ASTROTRACKER_GIT_REV="${ASTROTRACKER_GIT_REV}")
+  ASTROTRACKER_GIT_REV="${ASTROTRACKER_GIT_REV}"
+  ASTROTRACKER_HAS_QT_EXIF)
 
 target_link_libraries(astrotracker PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets
@@ -133,6 +188,10 @@ target_link_libraries(astrotracker PRIVATE
   libraw
   FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale
 )
+if(EXIV2_FOUND)
+  target_link_libraries(astrotracker PRIVATE EXIV2::EXIV2)
+  target_compile_definitions(astrotracker PRIVATE ASTROTRACKER_HAS_EXIV2)
+endif()
 
 # Deploy Qt runtime (DLLs) junto al ejecutable
 add_custom_command(TARGET astrotracker POST_BUILD

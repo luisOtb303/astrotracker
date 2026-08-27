@@ -4,6 +4,19 @@
 #include "ui/AboutDialog.h"
 #include "ui/PhotoPanel.h"
 #include "ui/VideoView.h"
+#include "ui/theme/ThemeManager.h"
+#include "ui/viewport/ViewportWidget.h"
+#include "ui/viewport/TrackingOverlay.h"
+#include "ui/panels/PanelManager.h"
+#include "ui/panels/InputPanel.h"
+#include "ui/panels/ObjectPanel.h"
+#include "ui/panels/TrackingPanel.h"
+#include "ui/panels/TransformPanel.h"
+#include "ui/panels/ExportPanel.h"
+#include "ui/panels/InfoPanel.h"
+#include "ui/timeline/TimelineWidget.h"
+#include "ui/timeline/TransportBar.h"
+#include "ui/timeline/FilmstripWidget.h"
 #include "video/IVideoReader.h"
 #include "video/FFmpegVideoReader.h"
 #include "processing/FrameTransformer.h"
@@ -33,6 +46,7 @@
 #include <QSettings>
 #include <QSlider>
 #include <QStandardItemModel>
+#include <QSplitter>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTabWidget>
@@ -47,6 +61,9 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    // Apply dark theme by default.
+    ThemeManager::instance().setTheme(AppTheme::Dark);
+
     setupUi();
     timer_ = new QTimer(this);
     timer_->setInterval(33);
@@ -57,6 +74,7 @@ MainWindow::MainWindow(QWidget* parent)
     recentProjects_ = settings.value("Projects/recentFiles").toStringList();
 
     connect(photosPanel_, &PhotoPanel::modified, this, &MainWindow::markProjectModified);
+    connect(photosPanel_, &PhotoPanel::photoExifChanged, infoPanel_, &InfoPanel::setExifInfo);
     connect(trackerCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int) { if (reader_) markProjectModified(); });
     connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -64,8 +82,20 @@ MainWindow::MainWindow(QWidget* parent)
     connect(smoothSpin_, &QDoubleSpinBox::valueChanged, this,
             [this](double) { if (reader_) markProjectModified(); });
 
+    // Connect new panel signals to existing slots.
+    if (trackingPanel_) {
+        connect(trackingPanel_, &TrackingPanel::analyzeRequested, this, &MainWindow::startAnalyze);
+        connect(trackingPanel_, &TrackingPanel::stopRequested, this, [this]() {
+            if (worker_) worker_->requestInterruption();
+        });
+    }
+    if (transformPanel_) {
+        connect(transformPanel_, &TransformPanel::previewToggled, this, &MainWindow::togglePreview);
+    }
+
     updateStabilizationUi();
     refreshProjectUi();
+    updatePanelMode();
 }
 
 MainWindow::~MainWindow() = default;
@@ -179,14 +209,72 @@ void MainWindow::setupUi()
     exportAction_->setToolTip(tr("Estabilizar y guardar el vídeo de salida"));
     connect(exportAction_, &QAction::triggered, this, &MainWindow::startExport);
 
+    // --- New UI Layout: PanelManager | Viewport+Timeline | InfoPanel ---
+    auto* centralWidget = new QWidget(this);
+    auto* mainHLayout = new QHBoxLayout(centralWidget);
+    mainHLayout->setContentsMargins(4, 4, 4, 4);
+    mainHLayout->setSpacing(4);
+
+    // Left panel manager (collapsible panels)
+    panelManager_ = new PanelManager(this);
+    panelManager_->setFixedWidth(280);
+
+    inputPanel_ = new InputPanel(this);
+    panelManager_->addPanel("input", tr("Input"), inputPanel_);
+    connect(inputPanel_, &InputPanel::openVideo, this, &MainWindow::openFile);
+    connect(inputPanel_, &InputPanel::openPhotos, this, &MainWindow::openPhotos);
+    connect(inputPanel_, &InputPanel::openProject, this, &MainWindow::openProjectDialog);
+
+    objectPanel_ = new ObjectPanel(this);
+    panelManager_->addPanel("object", tr("Object"), objectPanel_);
+
+    trackingPanel_ = new TrackingPanel(this);
+    panelManager_->addPanel("tracking", tr("Tracking"), trackingPanel_);
+
+    transformPanel_ = new TransformPanel(this);
+    panelManager_->addPanel("transform", tr("Transform"), transformPanel_);
+
+    exportPanel_ = new ExportPanel(this);
+    panelManager_->addPanel("export", tr("Export"), exportPanel_);
+
+    panelManager_->applyMode("empty");
+    mainHLayout->addWidget(panelManager_);
+
+    // Center: Tab widget (Video + Photos) + Timeline
+    auto* centerWidget = new QWidget(this);
+    auto* centerLayout = new QVBoxLayout(centerWidget);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(4);
+
     tabs_ = new QTabWidget(this);
     tabs_->addTab(createVideoPage(), tr("Vídeo"));
     photosPanel_ = new PhotoPanel(this);
     tabs_->addTab(photosPanel_, tr("Fotos"));
-    setCentralWidget(tabs_);
+    centerLayout->addWidget(tabs_, 1);
+
+    // Timeline at the bottom of center
+    timeline_ = new TimelineWidget(this);
+    centerLayout->addWidget(timeline_);
+
+    connect(timeline_, &TimelineWidget::valueChanged, this, [this](int ms) {
+        if (!reader_ || ms == currentUs_ / 1000)
+            return;
+        reader_->seekToUs(static_cast<int64_t>(ms) * 1000);
+        showCurrentFrame();
+    });
+
+    mainHLayout->addWidget(centerWidget, 1);
+
+    // Right info panel
+    infoPanel_ = new InfoPanel(this);
+    infoPanel_->setFixedWidth(240);
+    mainHLayout->addWidget(infoPanel_);
+
+    setCentralWidget(centralWidget);
 
     connect(tabs_, &QTabWidget::currentChanged, this, [this]() {
         updateTransportUi();
+        updatePanelMode();
     });
     updateTransportUi();
 
@@ -389,12 +477,6 @@ void MainWindow::setupUi()
                 }
             });
 
-    connect(slider_, &QSlider::valueChanged, this, [this](int ms) {
-        if (!reader_ || ms == currentUs_ / 1000)
-            return;
-        reader_->seekToUs(static_cast<int64_t>(ms) * 1000);
-        showCurrentFrame();
-    });
 }
 
 QWidget* MainWindow::createVideoPage()
@@ -424,17 +506,8 @@ QWidget* MainWindow::createVideoPage()
     viewers->addLayout(resultBox, 1);
     root->addLayout(viewers, 1);
 
-    slider_ = new QSlider(Qt::Horizontal, central);
-    slider_->setEnabled(false);
-    root->addWidget(slider_);
-
-    auto* bottom = new QHBoxLayout();
-    frameLabel_ = new QLabel(tr("Frame: - / -"), central);
-    timeLabel_ = new QLabel(tr("00:00:00.000"), central);
-    timeLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    bottom->addWidget(frameLabel_, 1);
-    bottom->addWidget(timeLabel_);
-    root->addLayout(bottom);
+    // Timeline controls are now in the main layout (timeline_ widget).
+    // The old slider_/frameLabel_/timeLabel_ are no longer needed here.
 
     return central;
 }
@@ -558,14 +631,27 @@ void MainWindow::openPath(const QString& path)
     startUs_ = 0;
     startIndex_ = 0;
 
-    slider_->setRange(0, static_cast<int>(totalUs_ / 1000));
-    slider_->setValue(0);
-    slider_->setEnabled(true);
+    // Update timeline
+    timeline_->setRange(0, static_cast<int>(totalUs_ / 1000));
+    timeline_->setValue(0);
+    timeline_->setEnabled(true);
     playAction_->setEnabled(true);
+
+    // Update input panel info
+    if (inputPanel_) {
+        inputPanel_->setMaterialInfo(
+            tr("%1\n%2x%3, %4 fps, %5 frames")
+                .arg(QFileInfo(path).fileName())
+                .arg(reader_->width())
+                .arg(reader_->height())
+                .arg(reader_->fps(), 0, 'f', 2)
+                .arg(totalFrames_));
+    }
 
     showCurrentFrame();
     updateTransportUi();
     updateStabilizationUi();
+    updatePanelMode();
     refreshProjectUi();
     statusBar()->showMessage(
         tr("Abierto: %1  (%2x%3, %4 fps, %5 frames)  ·  Dibuja una ROI sobre el "
@@ -587,12 +673,21 @@ void MainWindow::showCurrentFrame()
     resultView_->setFrame(displayFrame(frame.image, frame.index));
 
     const int ms = static_cast<int>(currentUs_ / 1000);
-    slider_->setValue(ms);
+    timeline_->setValue(ms);
+    timeline_->setFrameLabel(static_cast<int>(frame.index), static_cast<int>(totalFrames_));
+    timeline_->setTimeLabel(formatTime(currentUs_));
 
-    frameLabel_->setText(tr("Frame: %1 / %2")
-                             .arg(frame.index)
-                             .arg(totalFrames_));
-    timeLabel_->setText(formatTime(currentUs_));
+    // Update info panel
+    if (infoPanel_) {
+        const QString time = formatTime(currentUs_);
+        infoPanel_->setFrameInfo(
+            static_cast<int>(frame.index),
+            static_cast<int>(totalFrames_),
+            time,
+            trackerCombo_ ? trackerCombo_->currentText() : QString(),
+            0.0f, 0.0f, 0.0f,
+            offsets_.empty() ? tr("No tracking") : tr("Tracking active"));
+    }
 }
 
 void MainWindow::playPause()
@@ -647,9 +742,9 @@ void MainWindow::onTimer()
     currentUs_ = frame.ptsUs;
     view_->setFrame(frame.image);
     resultView_->setFrame(displayFrame(frame.image, frame.index));
-    slider_->setValue(static_cast<int>(currentUs_ / 1000));
-    frameLabel_->setText(tr("Frame: %1 / %2").arg(frame.index).arg(totalFrames_));
-    timeLabel_->setText(formatTime(currentUs_));
+    timeline_->setValue(static_cast<int>(currentUs_ / 1000));
+    timeline_->setFrameLabel(static_cast<int>(frame.index), static_cast<int>(totalFrames_));
+    timeline_->setTimeLabel(formatTime(currentUs_));
 }
 
 void MainWindow::onRoiSelected(const QRect& rect)
@@ -850,6 +945,41 @@ void MainWindow::updateTransportUi()
     // Grupo "Vídeo" del dock: solo en pestaña Vídeo.
     if (videoGroup_)
         videoGroup_->setVisible(onVideoTab);
+
+    // Update tracking panel mode.
+    if (trackingPanel_)
+        trackingPanel_->setMode(onVideoTab);
+}
+
+void MainWindow::updatePanelMode()
+{
+    if (!panelManager_) return;
+
+    const bool onVideoTab = tabs_->currentIndex() == 0;
+    const bool hasContent = reader_ != nullptr || photosPanel_->isOpen();
+    const bool analyzed = !offsets_.empty() || photosPanel_->isOpen();
+
+    if (!hasContent) {
+        panelManager_->applyMode("empty");
+    } else if (worker_) {
+        panelManager_->applyMode("processing");
+    } else if (analyzed) {
+        panelManager_->applyMode("analyzed");
+    } else if (onVideoTab) {
+        panelManager_->applyMode("loaded_video");
+    } else {
+        panelManager_->applyMode("loaded_photo");
+    }
+
+    // Update info panel visibility.
+    if (infoPanel_) {
+        infoPanel_->setTrackingVisible(hasContent);
+        infoPanel_->setFrameInfoVisible(hasContent);
+        const bool onPhotoTab = tabs_->currentIndex() == 1;
+        infoPanel_->setExifVisible(onPhotoTab && photosPanel_->isOpen());
+        if (!onPhotoTab || !photosPanel_->isOpen())
+            infoPanel_->clearExifInfo();
+    }
 }
 
 PipelineSettings MainWindow::currentSettings() const
@@ -988,12 +1118,13 @@ void MainWindow::closeVideo()
     view_->setFrame(cv::Mat());
     resultView_->setFrame(cv::Mat());
     view_->clearRoi();
-    slider_->setEnabled(false);
-    slider_->setValue(0);
-    frameLabel_->setText(tr("Frame: - / -"));
-    timeLabel_->setText(tr("00:00:00.000"));
+    timeline_->setEnabled(false);
+    timeline_->setValue(0);
+    timeline_->setFrameLabel(-1, -1);
+    timeline_->setTimeLabel("00:00:00.000");
     updateTransportUi();
     updateStabilizationUi();
+    updatePanelMode();
 }
 
 PhotoProject MainWindow::collectProject() const

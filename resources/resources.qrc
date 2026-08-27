@@ -10,4 +10,7 @@
         <file>licenses/lgpl-2.1.txt</file>
         <file>licenses/lgpl-3.0.txt</file>
     </qresource>
+    <qresource prefix="/styles">
+        <file alias="dark.qss">../src/ui/styles/dark.qss</file>
+    </qresource>
 </RCC>

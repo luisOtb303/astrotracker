@@ -171,7 +171,9 @@ add_executable(test_stills test_stills/main.cpp
   ../src/stills/PhotoSequenceReader.h
   ../src/stills/PhotoSequenceReader.cpp
   ../src/raw/RawDecoder.h
-  ../src/raw/RawDecoder.cpp)
+  ../src/raw/RawDecoder.cpp
+  ../src/raw/RawExifReader.h
+  ../src/raw/RawExifReader.cpp)
 
 target_include_directories(test_stills PRIVATE ../src)
 target_compile_definitions(test_stills PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -254,6 +256,8 @@ add_executable(test_eclipse test_eclipse/main.cpp
   ../src/stills/PhotoSequenceReader.cpp
   ../src/raw/RawDecoder.h
   ../src/raw/RawDecoder.cpp
+  ../src/raw/RawExifReader.h
+  ../src/raw/RawExifReader.cpp
   ../src/motion/TrackStatus.h
   ../src/motion/Kalman.h
   ../src/motion/Kalman.cpp
@@ -315,6 +319,8 @@ add_executable(test_export test_export/main.cpp
   ../src/stills/PhotoSequenceReader.cpp
   ../src/raw/RawDecoder.h
   ../src/raw/RawDecoder.cpp
+  ../src/raw/RawExifReader.h
+  ../src/raw/RawExifReader.cpp
   ../src/motion/TrackStatus.h
   ../src/motion/MotionModel.h
   ../src/motion/Kalman.h

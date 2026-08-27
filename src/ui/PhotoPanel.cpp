@@ -514,6 +514,8 @@ void PhotoPanel::showCurrentSync()
     }
     view_->setFrame(frame);
     updateViewerCircles(frame);
+
+    emit photoExifChanged(reader_.exifInfo(current_));
 }
 
 void PhotoPanel::showCurrent()

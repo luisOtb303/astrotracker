@@ -88,10 +88,12 @@ resources/      iconos, estilos
   integración de IA → candidato natural a 1.0.0).
 - **Proceso de release** (checklist): 1) bump `project(VERSION)`; 2) mover
   `[Unreleased]` a una sección nueva del changelog con fecha; 3) commit;
-  4) tag anotado `vx.y.z` sobre ese commit (así el ejecutable lleva el rev
-  correcto); 5) regenerar artefactos con `scripts/make-release.ps1`
-  (build + ctest + `cpack -C Release`: ZIP portable + instalador NSIS).
-  El instalador requiere NSIS (`winget install NSIS.NSIS`) solo para generarlo.
+  4) ejecutar `scripts/make-release.ps1`: compila (Release), corre CTest,
+  empaqueta (`cpack -C Release`: ZIP portable + instalador NSIS) y crea el
+  tag anotado `vx.y.z` sobre HEAD (así el ejecutable lleva el rev correcto).
+  El script informa al final el comando `git push origin vx.y.z` para publicar
+  el tag. El instalador requiere NSIS (`winget install NSIS.NSIS`) solo para
+  generarlo.
 
 ## No hacer
 

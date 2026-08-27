@@ -1,9 +1,9 @@
 # Genera los artefactos de release de AstroTracker: ZIP portable e instalador
 # NSIS. Requiere que el proyecto ya esté configurado en build/ y que la versión
-# y el changelog estén actualizados (ver checklist en README.md).
+# y el changelog estén actualizados (ver checklist en AGENTS.md).
 #
 # Uso:
-#   powershell -File scripts\make-release.ps1             # build + tests + empaquetado
+#   powershell -File scripts\make-release.ps1             # build + tests + empaquetado + tag
 #   powershell -File scripts\make-release.ps1 -SkipTests  # sin ctest
 param(
     [switch]$SkipTests
@@ -51,3 +51,16 @@ Get-ChildItem (Join-Path $build "AstroTracker-*-win64.*") |
     ForEach-Object {
         Write-Host ("Artefacto: {0}  ({1:N1} MB)" -f $_.FullName, ($_.Length / 1MB)) -ForegroundColor Green
     }
+
+# Tag anotado
+$ver = (Select-String -Path (Join-Path $root "CMakeLists.txt") -Pattern 'project\(AstroTracker VERSION (\S+)\)').Matches[0].Groups[1].Value
+$tag = "v$ver"
+$existingTag = git tag -l $tag 2>$null
+if ($existingTag) {
+    Write-Warning "El tag '$tag' ya existe; se omite."
+} else {
+    Write-Host "== Creando tag anotado '$tag'..." -ForegroundColor Cyan
+    git tag -a $tag -m "Release $tag"
+    if ($LASTEXITCODE -ne 0) { Write-Error "No se pudo crear el tag '$tag'." }
+    Write-Host "Tag creado. Empuja con: git push origin $tag" -ForegroundColor Green
+}
