@@ -136,27 +136,34 @@ void MainWindow::setupUi()
     helpMenu->addSeparator();
     helpMenu->addAction(tr("Acerca de &Qt"), this, &MainWindow::aboutQt);
 
-    QToolBar* tb = addToolBar(tr("Reproducción"));
-    tb->setMovable(false);
+    // Toolbar "Archivo" (siempre visible).
+    auto* fileToolBar = addToolBar(tr("Archivo"));
+    fileToolBar->setMovable(false);
 
-    QAction* openTb = tb->addAction(style()->standardIcon(QStyle::SP_DialogOpenButton),
-                                    tr("Abrir"), this, &MainWindow::openFile);
+    QAction* openTb = fileToolBar->addAction(
+        style()->standardIcon(QStyle::SP_DialogOpenButton),
+        tr("Abrir"), this, &MainWindow::openFile);
     Q_UNUSED(openTb);
-    tb->addAction(openProjectAction_);
-    tb->addAction(saveProjectAction_);
+    fileToolBar->addAction(openProjectAction_);
+    fileToolBar->addAction(saveProjectAction_);
 
-    playAction_ = tb->addAction(style()->standardIcon(QStyle::SP_MediaPlay),
-                                tr("Reproducir/Pausar"), this, &MainWindow::playPause);
+    // Toolbar "Vídeo" (solo visible con vídeo cargado en pestaña Vídeo).
+    transportToolBar_ = addToolBar(tr("Vídeo"));
+    transportToolBar_->setMovable(false);
+    playAction_ = transportToolBar_->addAction(
+        style()->standardIcon(QStyle::SP_MediaPlay),
+        tr("Reproducir/Pausar"), this, &MainWindow::playPause);
     playAction_->setEnabled(false);
-    tb->addAction(style()->standardIcon(QStyle::SP_MediaSkipBackward),
-                  tr("Atrás"), this, &MainWindow::stepBackward);
-    tb->addAction(style()->standardIcon(QStyle::SP_MediaSkipForward),
-                  tr("Adelante"), this, &MainWindow::stepForward);
-    tb->addAction(style()->standardIcon(QStyle::SP_MediaStop),
-                  tr("Detener"), this, &MainWindow::stop);
-
-    // (La toolbar de estabilización desaparece: sus controles viven ahora en
-    // el dock "Seguimiento" > Vídeo, junto al resto de ajustes.)
+    transportToolBar_->addAction(
+        style()->standardIcon(QStyle::SP_MediaSkipBackward),
+        tr("Atrás"), this, &MainWindow::stepBackward);
+    transportToolBar_->addAction(
+        style()->standardIcon(QStyle::SP_MediaSkipForward),
+        tr("Adelante"), this, &MainWindow::stepForward);
+    transportToolBar_->addAction(
+        style()->standardIcon(QStyle::SP_MediaStop),
+        tr("Detener"), this, &MainWindow::stop);
+    transportToolBar_->hide();
 
     // Acciones de vídeo: los botones viven en el dock "Seguimiento" > Vídeo.
     analyzeAction_ = new QAction(tr("Seguir"), this);
@@ -177,6 +184,11 @@ void MainWindow::setupUi()
     photosPanel_ = new PhotoPanel(this);
     tabs_->addTab(photosPanel_, tr("Fotos"));
     setCentralWidget(tabs_);
+
+    connect(tabs_, &QTabWidget::currentChanged, this, [this]() {
+        updateTransportUi();
+    });
+    updateTransportUi();
 
     connect(photosPanel_, &PhotoPanel::statusMessage, this,
             [this](const QString& msg, int timeoutMs) {
@@ -285,24 +297,24 @@ void MainWindow::setupUi()
     clearOverrideBtn_->setEnabled(false);
     photosLay->addWidget(clearOverrideBtn_);
 
-    auto* videoGroup = new QGroupBox(tr("Vídeo"), dockWidget);
-    auto* videoLay = new QVBoxLayout(videoGroup);
-    videoLay->addWidget(new QLabel(tr("Tracker"), videoGroup));
-    trackerCombo_ = new QComboBox(videoGroup);
+    videoGroup_ = new QGroupBox(tr("Vídeo"), dockWidget);
+    auto* videoLay = new QVBoxLayout(videoGroup_);
+    videoLay->addWidget(new QLabel(tr("Tracker"), videoGroup_));
+    trackerCombo_ = new QComboBox(videoGroup_);
     trackerCombo_->addItem(tr("Template"));
     trackerCombo_->addItem(tr("Centroid"));
     trackerCombo_->addItem(tr("Disco (perfil)"));
     trackerCombo_->setToolTip(tr("Algoritmo de seguimiento. \"Disco (perfil)\" usa "
                                  "el motor del modo Fotos con el perfil elegido arriba"));
     videoLay->addWidget(trackerCombo_);
-    videoLay->addWidget(new QLabel(tr("Borde"), videoGroup));
-    borderCombo_ = new QComboBox(videoGroup);
+    videoLay->addWidget(new QLabel(tr("Borde"), videoGroup_));
+    borderCombo_ = new QComboBox(videoGroup_);
     borderCombo_->addItem(tr("Borde negro"));
     borderCombo_->addItem(tr("Borde réplica"));
     borderCombo_->setToolTip(tr("Relleno de los bordes al desplazar el frame"));
     videoLay->addWidget(borderCombo_);
-    videoLay->addWidget(new QLabel(tr("Suavizado"), videoGroup));
-    smoothSpin_ = new QDoubleSpinBox(videoGroup);
+    videoLay->addWidget(new QLabel(tr("Suavizado"), videoGroup_));
+    smoothSpin_ = new QDoubleSpinBox(videoGroup_);
     smoothSpin_->setRange(0.01, 1.0);
     smoothSpin_->setSingleStep(0.05);
     smoothSpin_->setValue(0.3);
@@ -310,11 +322,11 @@ void MainWindow::setupUi()
     videoLay->addWidget(smoothSpin_);
 
     auto* videoBtnRow = new QHBoxLayout();
-    auto* seguirBtn = new QToolButton(videoGroup);
+    auto* seguirBtn = new QToolButton(videoGroup_);
     seguirBtn->setDefaultAction(analyzeAction_);
-    auto* previewBtn = new QToolButton(videoGroup);
+    auto* previewBtn = new QToolButton(videoGroup_);
     previewBtn->setDefaultAction(previewAction_);
-    auto* exportBtn = new QToolButton(videoGroup);
+    auto* exportBtn = new QToolButton(videoGroup_);
     exportBtn->setDefaultAction(exportAction_);
     videoBtnRow->addWidget(seguirBtn);
     videoBtnRow->addWidget(previewBtn);
@@ -325,7 +337,7 @@ void MainWindow::setupUi()
             this, [this](int) { showCurrentFrame(); });
 
     dockLay->addWidget(photosGroup);
-    dockLay->addWidget(videoGroup);
+    dockLay->addWidget(videoGroup_);
     dockLay->addStretch(1);
     trackDock_->setWidget(dockWidget);
     addDockWidget(Qt::LeftDockWidgetArea, trackDock_);
@@ -552,6 +564,7 @@ void MainWindow::openPath(const QString& path)
     playAction_->setEnabled(true);
 
     showCurrentFrame();
+    updateTransportUi();
     updateStabilizationUi();
     refreshProjectUi();
     statusBar()->showMessage(
@@ -828,7 +841,15 @@ void MainWindow::setBusy(bool busy)
 
 void MainWindow::updateTransportUi()
 {
-    // no-op por ahora
+    const bool onVideoTab = tabs_->currentIndex() == 0;
+    const bool hasVideo = reader_ != nullptr;
+
+    // Toolbar de vídeo: solo en pestaña Vídeo con vídeo cargado.
+    transportToolBar_->setVisible(onVideoTab && hasVideo);
+
+    // Grupo "Vídeo" del dock: solo en pestaña Vídeo.
+    if (videoGroup_)
+        videoGroup_->setVisible(onVideoTab);
 }
 
 PipelineSettings MainWindow::currentSettings() const
@@ -971,6 +992,7 @@ void MainWindow::closeVideo()
     slider_->setValue(0);
     frameLabel_->setText(tr("Frame: - / -"));
     timeLabel_->setText(tr("00:00:00.000"));
+    updateTransportUi();
     updateStabilizationUi();
 }
 

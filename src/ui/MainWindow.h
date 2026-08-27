@@ -15,6 +15,7 @@ class PhotoPanel;
 class IVideoReader;
 class QComboBox;
 class QDoubleSpinBox;
+class QGroupBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -110,6 +111,7 @@ private:
     QSlider* slider_ = nullptr;
     QTimer* timer_ = nullptr;
     QAction* playAction_ = nullptr;
+    QToolBar* transportToolBar_ = nullptr;
     QAction* analyzeAction_ = nullptr;
     QAction* previewAction_ = nullptr;
     QAction* exportAction_ = nullptr;
@@ -137,6 +139,7 @@ private:
     QComboBox* photoMethodCombo_ = nullptr;
     QLabel* photoStatusLabel_ = nullptr;
     QPushButton* clearOverrideBtn_ = nullptr;
+    QGroupBox* videoGroup_ = nullptr;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;
