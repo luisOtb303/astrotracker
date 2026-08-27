@@ -7,6 +7,8 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-27
+
 ### Added
 
 - **Perfiles de seguimiento y métodos de auto-centrado (fase 1)**: nuevo dock
