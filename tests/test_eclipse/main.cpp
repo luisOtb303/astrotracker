@@ -4,9 +4,11 @@
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -141,6 +143,47 @@ int main(int argc, char** argv)
         }
         printf("overlays (verde=centro del disco por arco, rojo=seguido) en %s\n",
                dir.c_str());
+    }
+
+    // Resumen de métricas.
+    {
+        std::vector<double> errs;
+        std::vector<float> radii;
+        std::vector<float> confs;
+        int measured = 0, predicted = 0, refOkCount = 0;
+        for (int64_t i = 0; i < n; ++i) {
+            if (refOk[i])
+                ++refOkCount;
+            if (tracks[i].status == TrackStatus::VALID) {
+                if (tracks[i].predicted) ++predicted; else ++measured;
+                errs.push_back(cv::norm(tracks[i].center - ref[i]));
+                if (tracks[i].radius > 0.f)
+                    radii.push_back(tracks[i].radius);
+                confs.push_back(tracks[i].confidence);
+            }
+        }
+        std::sort(errs.begin(), errs.end());
+        std::sort(radii.begin(), radii.end());
+        std::sort(confs.begin(), confs.end());
+        const double meanErr = errs.empty() ? 0.0
+            : std::accumulate(errs.begin(), errs.end(), 0.0) / errs.size();
+        const double medianErr = errs.empty() ? 0.0 : errs[errs.size() / 2];
+        const double maxErr = errs.empty() ? 0.0 : errs.back();
+        const float meanR = radii.empty() ? 0.f
+            : std::accumulate(radii.begin(), radii.end(), 0.f) / radii.size();
+        const float medianC = confs.empty() ? 0.f : confs[confs.size() / 2];
+
+        printf("\n=== RESUMEN ECLIPSE ===\n");
+        printf("fotos:             %lld\n", static_cast<long long>(n));
+        printf("ref válidas:       %d/%lld\n", refOkCount,
+               static_cast<long long>(n));
+        printf("tracking válido:   %d (medidos=%d, predichos=%d)\n",
+               measured + predicted, measured, predicted);
+        printf("error(ref) px:     media=%.2f  mediana=%.2f  max=%.2f\n",
+               meanErr, medianErr, maxErr);
+        printf("radio medio:       %.1f px\n", meanR);
+        printf("confianza mediana: %.3f\n", medianC);
+        printf("=======================\n");
     }
 
     printf("Informe generado (sin fallo): revisa los overlays y/o la app para juzgar.\n");
