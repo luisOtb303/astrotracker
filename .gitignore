@@ -8,6 +8,7 @@ out/
 bin/
 *.log
 testdata/eclipse/
+tests/test_lunar_eclipse_video/
 
 # Favicon web-only de realfavicongenerator (se pueden regenerar); no son
 # entrada de build. Se versiona solo app.ico y app-icon-512.png.

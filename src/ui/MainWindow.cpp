@@ -5,21 +5,14 @@
 #include "ui/PhotoPanel.h"
 #include "ui/VideoView.h"
 #include "ui/theme/ThemeManager.h"
-#include "ui/viewport/ViewportWidget.h"
-#include "ui/viewport/TrackingOverlay.h"
-#include "ui/panels/PanelManager.h"
-#include "ui/panels/InputPanel.h"
-#include "ui/panels/ObjectPanel.h"
-#include "ui/panels/TrackingPanel.h"
-#include "ui/panels/TransformPanel.h"
-#include "ui/panels/ExportPanel.h"
+#include "ui/shortcuts/ShortcutManager.h"
 #include "ui/panels/InfoPanel.h"
 #include "ui/timeline/TimelineWidget.h"
-#include "ui/timeline/TransportBar.h"
-#include "ui/timeline/FilmstripWidget.h"
 #include "video/IVideoReader.h"
 #include "video/FFmpegVideoReader.h"
+#include "stills/VideoExportWorker.h"
 #include "processing/FrameTransformer.h"
+#include "tracking/DiscArcFit.h"
 #include "export/PipelineWorker.h"
 
 #include <QAction>
@@ -41,20 +34,22 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QDir>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileInfo>
+#include <QLineEdit>
 #include <QProgressBar>
+#include <QRadioButton>
 #include <QSettings>
-#include <QSlider>
 #include <QStandardItemModel>
-#include <QSplitter>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
-#include <QToolButton>
 #include <QVBoxLayout>
 #include <QTime>
+#include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -82,20 +77,20 @@ MainWindow::MainWindow(QWidget* parent)
     connect(smoothSpin_, &QDoubleSpinBox::valueChanged, this,
             [this](double) { if (reader_) markProjectModified(); });
 
-    // Connect new panel signals to existing slots.
-    if (trackingPanel_) {
-        connect(trackingPanel_, &TrackingPanel::analyzeRequested, this, &MainWindow::startAnalyze);
-        connect(trackingPanel_, &TrackingPanel::stopRequested, this, [this]() {
-            if (worker_) worker_->requestInterruption();
-        });
-    }
-    if (transformPanel_) {
-        connect(transformPanel_, &TransformPanel::previewToggled, this, &MainWindow::togglePreview);
-    }
+    installShortcuts();
 
     updateStabilizationUi();
     refreshProjectUi();
     updatePanelMode();
+
+    // Restaurar geometría/estado de docks guardado.
+    const QSettings uiSettings;
+    const QByteArray geometry = uiSettings.value("UI/geometry").toByteArray();
+    const QByteArray state = uiSettings.value("UI/state").toByteArray();
+    if (!geometry.isEmpty() && !restoreGeometry(geometry))
+        resize(1280, 800);
+    if (!state.isEmpty())
+        restoreState(state);
 }
 
 MainWindow::~MainWindow() = default;
@@ -103,7 +98,7 @@ MainWindow::~MainWindow() = default;
 void MainWindow::setupUi()
 {
     setWindowTitle(tr("AstroTracker"));
-    resize(1100, 720);
+    resize(1280, 800);
 
     // Acciones de proyecto, creadas antes de montar el menú para controlar el
     // orden; las mismas QAction se comparten con la barra de herramientas.
@@ -160,6 +155,27 @@ void MainWindow::setupUi()
             logDock_->setVisible(on);
     });
 
+    trackDockAction_ = viewMenu->addAction(tr("&Seguimiento"));
+    trackDockAction_->setCheckable(true);
+    trackDockAction_->setChecked(true);
+    connect(trackDockAction_, &QAction::toggled, this, [this](bool on) {
+        if (trackDock_)
+            trackDock_->setVisible(on);
+    });
+
+    infoDockAction_ = viewMenu->addAction(tr("&Información"));
+    infoDockAction_->setCheckable(true);
+    infoDockAction_->setChecked(true);
+    infoDockAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+I")));
+    connect(infoDockAction_, &QAction::toggled, this, [this](bool on) {
+        if (infoDock_)
+            infoDock_->setVisible(on);
+    });
+    viewMenu->addSeparator();
+    QAction* restorePanels = viewMenu->addAction(tr("&Restablecer paneles"));
+    restorePanels->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
+    connect(restorePanels, &QAction::triggered, this, &MainWindow::restoreDocks);
+
     QMenu* helpMenu = menuBar()->addMenu(tr("&Ayuda"));
     helpMenu->addAction(tr("&Acerca de AstroTracker..."), this, &MainWindow::showAbout);
     helpMenu->addAction(tr("&Licencias..."), this, &MainWindow::showLicenses);
@@ -195,55 +211,40 @@ void MainWindow::setupUi()
         tr("Detener"), this, &MainWindow::stop);
     transportToolBar_->hide();
 
-    // Acciones de vídeo: los botones viven en el dock "Seguimiento" > Vídeo.
-    analyzeAction_ = new QAction(tr("Seguir"), this);
+    // Acciones de vídeo: viven en la toolbar de la pestaña Vídeo.
+    analyzeAction_ = new QAction(tr("Calcular automáticamente"), this);
     analyzeAction_->setToolTip(
-        tr("Analizar el vídeo: seguir el objeto y calcular desplazamientos "
-           "(dibuja una ROI o deja que detecte el disco automáticamente)"));
+        tr("Seguir el objeto en todo el vídeo (si el tracker es \"Disco\", "
+           "detecta el disco automáticamente; con los otros dibuja una ROI "
+           "antes). Cada frame se desplaza para mantener el objeto centrado."));
     connect(analyzeAction_, &QAction::triggered, this, &MainWindow::startAnalyze);
+    fitAction_ = new QAction(tr("Ajustar fotograma"), this);
+    fitAction_->setToolTip(
+        tr("Detectar el disco solo en el fotograma actual y señalar su "
+           "posición: el punto de partida del cálculo automático"));
+    connect(fitAction_, &QAction::triggered, this, &MainWindow::onFitFrame);
     previewAction_ = new QAction(tr("Vista previa"), this);
     previewAction_->setCheckable(true);
-    previewAction_->setToolTip(tr("Mostrar los frames estabilizados"));
+    previewAction_->setToolTip(tr("Mostrar el fotograma centrado en el visor derecho"));
     connect(previewAction_, &QAction::toggled, this, &MainWindow::togglePreview);
-    exportAction_ = new QAction(tr("Exportar..."), this);
-    exportAction_->setToolTip(tr("Estabilizar y guardar el vídeo de salida"));
-    connect(exportAction_, &QAction::triggered, this, &MainWindow::startExport);
+    exportVideoAction_ = new QAction(tr("Exportar vídeo..."), this);
+    exportVideoAction_->setToolTip(tr("Guardar el vídeo como MP4 (centrado si se ha "
+                                      "calculado, directo si no)"));
+    connect(exportVideoAction_, &QAction::triggered, this, &MainWindow::startExportVideo);
+    exportPhotosAction_ = new QAction(tr("Exportar fotos..."), this);
+    exportPhotosAction_->setToolTip(tr("Extraer los fotogramas del vídeo como imágenes "
+                                       "PNG/JPG (centradas si se han calculado, directas "
+                                       "si no)"));
+    connect(exportPhotosAction_, &QAction::triggered, this, &MainWindow::startExportPhotos);
+    stopAction_ = new QAction(tr("Detener"), this);
+    stopAction_->setEnabled(false);
+    stopAction_->setToolTip(tr("Detener el cálculo/exportación en curso"));
+    connect(stopAction_, &QAction::triggered, this, &MainWindow::stopProcessing);
 
-    // --- New UI Layout: PanelManager | Viewport+Timeline | InfoPanel ---
+    // --- Central: tabs (Vídeo|Fotos) + timeline ---
     auto* centralWidget = new QWidget(this);
-    auto* mainHLayout = new QHBoxLayout(centralWidget);
-    mainHLayout->setContentsMargins(4, 4, 4, 4);
-    mainHLayout->setSpacing(4);
-
-    // Left panel manager (collapsible panels)
-    panelManager_ = new PanelManager(this);
-    panelManager_->setFixedWidth(280);
-
-    inputPanel_ = new InputPanel(this);
-    panelManager_->addPanel("input", tr("Input"), inputPanel_);
-    connect(inputPanel_, &InputPanel::openVideo, this, &MainWindow::openFile);
-    connect(inputPanel_, &InputPanel::openPhotos, this, &MainWindow::openPhotos);
-    connect(inputPanel_, &InputPanel::openProject, this, &MainWindow::openProjectDialog);
-
-    objectPanel_ = new ObjectPanel(this);
-    panelManager_->addPanel("object", tr("Object"), objectPanel_);
-
-    trackingPanel_ = new TrackingPanel(this);
-    panelManager_->addPanel("tracking", tr("Tracking"), trackingPanel_);
-
-    transformPanel_ = new TransformPanel(this);
-    panelManager_->addPanel("transform", tr("Transform"), transformPanel_);
-
-    exportPanel_ = new ExportPanel(this);
-    panelManager_->addPanel("export", tr("Export"), exportPanel_);
-
-    panelManager_->applyMode("empty");
-    mainHLayout->addWidget(panelManager_);
-
-    // Center: Tab widget (Video + Photos) + Timeline
-    auto* centerWidget = new QWidget(this);
-    auto* centerLayout = new QVBoxLayout(centerWidget);
-    centerLayout->setContentsMargins(0, 0, 0, 0);
+    auto* centerLayout = new QVBoxLayout(centralWidget);
+    centerLayout->setContentsMargins(4, 4, 4, 4);
     centerLayout->setSpacing(4);
 
     tabs_ = new QTabWidget(this);
@@ -263,14 +264,18 @@ void MainWindow::setupUi()
         showCurrentFrame();
     });
 
-    mainHLayout->addWidget(centerWidget, 1);
-
-    // Right info panel
-    infoPanel_ = new InfoPanel(this);
-    infoPanel_->setFixedWidth(240);
-    mainHLayout->addWidget(infoPanel_);
-
     setCentralWidget(centralWidget);
+
+    // Right dock: Información (estadísticas de seguimiento + info de frame + EXIF).
+    infoPanel_ = new InfoPanel(this);
+    infoDock_ = new QDockWidget(tr("Información"), this);
+    infoDock_->setObjectName(QStringLiteral("infoDock"));
+    infoDock_->setMinimumWidth(220);
+    infoDock_->setWidget(infoPanel_);
+    infoDock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, infoDock_);
+    connect(infoDock_, &QDockWidget::visibilityChanged, infoDockAction_,
+            &QAction::setChecked);
 
     connect(tabs_, &QTabWidget::currentChanged, this, [this]() {
         updateTransportUi();
@@ -325,6 +330,8 @@ void MainWindow::setupUi()
     logDock_->setWidget(logWidget);
     addDockWidget(Qt::BottomDockWidgetArea, logDock_);
     resizeDocks({logDock_}, {160}, Qt::Vertical);
+    connect(logDock_, &QDockWidget::visibilityChanged, logDockAction_,
+            &QAction::setChecked);
 
     connect(&AppLog::instance(), &AppLog::message, this, &MainWindow::onLogMessage);
 
@@ -392,8 +399,10 @@ void MainWindow::setupUi()
     trackerCombo_->addItem(tr("Template"));
     trackerCombo_->addItem(tr("Centroid"));
     trackerCombo_->addItem(tr("Disco (perfil)"));
+    trackerCombo_->setCurrentIndex(2); // Disco: detecta solo, sin ROI
     trackerCombo_->setToolTip(tr("Algoritmo de seguimiento. \"Disco (perfil)\" usa "
-                                 "el motor del modo Fotos con el perfil elegido arriba"));
+                                 "el motor del modo Fotos con el perfil elegido arriba "
+                                 "y detecta el disco automáticamente"));
     videoLay->addWidget(trackerCombo_);
     videoLay->addWidget(new QLabel(tr("Borde"), videoGroup_));
     borderCombo_ = new QComboBox(videoGroup_);
@@ -409,18 +418,6 @@ void MainWindow::setupUi()
     smoothSpin_->setToolTip(tr("Suavizado (alpha EMA) del centro del objeto"));
     videoLay->addWidget(smoothSpin_);
 
-    auto* videoBtnRow = new QHBoxLayout();
-    auto* seguirBtn = new QToolButton(videoGroup_);
-    seguirBtn->setDefaultAction(analyzeAction_);
-    auto* previewBtn = new QToolButton(videoGroup_);
-    previewBtn->setDefaultAction(previewAction_);
-    auto* exportBtn = new QToolButton(videoGroup_);
-    exportBtn->setDefaultAction(exportAction_);
-    videoBtnRow->addWidget(seguirBtn);
-    videoBtnRow->addWidget(previewBtn);
-    videoLay->addLayout(videoBtnRow);
-    videoLay->addWidget(exportBtn);
-
     connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { showCurrentFrame(); });
 
@@ -429,6 +426,8 @@ void MainWindow::setupUi()
     dockLay->addStretch(1);
     trackDock_->setWidget(dockWidget);
     addDockWidget(Qt::LeftDockWidgetArea, trackDock_);
+    connect(trackDock_, &QDockWidget::visibilityChanged, trackDockAction_,
+            &QAction::setChecked);
 
     connect(profileCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int idx) {
@@ -484,19 +483,48 @@ QWidget* MainWindow::createVideoPage()
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout(central);
     root->setContentsMargins(4, 4, 4, 4);
+    root->setSpacing(4);
+
+    // Toolbar embebida de la pestaña Vídeo.
+    auto* toolbar = new QToolBar(central);
+    toolbar->setMovable(false);
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    toolbar->setStyleSheet(QStringLiteral("QToolBar { border: 0; }"));
+    auto* openVideo = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_DialogOpenButton),
+        tr("Abrir vídeo..."), this, &MainWindow::openFile);
+    Q_UNUSED(openVideo);
+    toolbar->addAction(
+        style()->standardIcon(QStyle::SP_DialogOpenButton),
+        tr("Abrir fotos..."), this, &MainWindow::openPhotos);
+    toolbar->addSeparator();
+    toolbar->addAction(analyzeAction_);
+    toolbar->addAction(fitAction_);
+    toolbar->addAction(previewAction_);
+    toolbar->addAction(exportVideoAction_);
+    toolbar->addAction(exportPhotosAction_);
+    toolbar->addSeparator();
+    toolbar->addAction(stopAction_);
+    root->addWidget(toolbar);
 
     auto* viewers = new QHBoxLayout();
 
     auto* sourceBox = new QVBoxLayout();
     auto* srcTitle = new QLabel(tr("Original"), central);
     srcTitle->setAlignment(Qt::AlignCenter);
+    srcTitle->setToolTip(
+        tr("El vídeo original. Después de calcular, se marca sobre el objeto "
+           "lo que se está siguiendo para que se entienda el centrado."));
     sourceBox->addWidget(srcTitle);
     view_ = new VideoView(central);
     sourceBox->addWidget(view_, 1);
 
     auto* resultBox = new QVBoxLayout();
-    auto* resTitle = new QLabel(tr("Estabilizado"), central);
+    auto* resTitle = new QLabel(tr("Centrado"), central);
     resTitle->setAlignment(Qt::AlignCenter);
+    resTitle->setToolTip(
+        tr("Cada frame se desplaza (y se rellenan los bordes) para que el "
+           "objeto se mantenga fijo, centrado en el fotograma."));
     resultBox->addWidget(resTitle);
     resultView_ = new VideoView(central);
     resultView_->setRoiEnabled(false);
@@ -505,9 +533,6 @@ QWidget* MainWindow::createVideoPage()
     viewers->addLayout(sourceBox, 1);
     viewers->addLayout(resultBox, 1);
     root->addLayout(viewers, 1);
-
-    // Timeline controls are now in the main layout (timeline_ widget).
-    // The old slider_/frameLabel_/timeLabel_ are no longer needed here.
 
     return central;
 }
@@ -624,10 +649,16 @@ void MainWindow::openPath(const QString& path)
     currentUs_ = 0;
     roi_ = QRect();
     offsets_.clear();
+    trackSamples_.clear();
+    currentFrameImage_ = cv::Mat();
+    hasSeed_ = false;
     previewEnabled_ = false;
     previewAction_->setChecked(false);
+    previewAction_->setEnabled(false);
     view_->setRoiEnabled(true);
     view_->clearRoi();
+    view_->clearCircle();
+    resultView_->clearCircle();
     startUs_ = 0;
     startIndex_ = 0;
 
@@ -636,17 +667,6 @@ void MainWindow::openPath(const QString& path)
     timeline_->setValue(0);
     timeline_->setEnabled(true);
     playAction_->setEnabled(true);
-
-    // Update input panel info
-    if (inputPanel_) {
-        inputPanel_->setMaterialInfo(
-            tr("%1\n%2x%3, %4 fps, %5 frames")
-                .arg(QFileInfo(path).fileName())
-                .arg(reader_->width())
-                .arg(reader_->height())
-                .arg(reader_->fps(), 0, 'f', 2)
-                .arg(totalFrames_));
-    }
 
     showCurrentFrame();
     updateTransportUi();
@@ -668,9 +688,17 @@ void MainWindow::showCurrentFrame()
     Frame frame;
     if (!reader_ || !reader_->readNext(frame))
         return;
+    presentFrame(frame);
+}
+
+void MainWindow::presentFrame(const Frame& frame)
+{
     currentUs_ = frame.ptsUs;
+    if (!frame.image.empty())
+        currentFrameImage_ = frame.image.clone();
     view_->setFrame(frame.image);
     resultView_->setFrame(displayFrame(frame.image, frame.index));
+    updateTrackCircle(frame.index);
 
     const int ms = static_cast<int>(currentUs_ / 1000);
     timeline_->setValue(ms);
@@ -687,6 +715,20 @@ void MainWindow::showCurrentFrame()
             trackerCombo_ ? trackerCombo_->currentText() : QString(),
             0.0f, 0.0f, 0.0f,
             offsets_.empty() ? tr("No tracking") : tr("Tracking active"));
+    }
+}
+
+void MainWindow::updateTrackCircle(int64_t frameIndex)
+{
+    const int64_t oi = frameIndex - startIndex_;
+    if (oi >= 0 && oi < static_cast<int64_t>(trackSamples_.size())) {
+        const TrackSample& s = trackSamples_.at(static_cast<int>(oi));
+        view_->setCircle(QPointF(s.center.x, s.center.y), s.radius,
+                         s.predicted || s.status == TrackStatus::LOST);
+    } else if (hasSeed_) {
+        view_->setCircle(QPointF(seedCenter_.x(), seedCenter_.y()), seedRadius_, false);
+    } else {
+        view_->clearCircle();
     }
 }
 
@@ -740,11 +782,7 @@ void MainWindow::onTimer()
         return;
     }
     currentUs_ = frame.ptsUs;
-    view_->setFrame(frame.image);
-    resultView_->setFrame(displayFrame(frame.image, frame.index));
-    timeline_->setValue(static_cast<int>(currentUs_ / 1000));
-    timeline_->setFrameLabel(static_cast<int>(frame.index), static_cast<int>(totalFrames_));
-    timeline_->setTimeLabel(formatTime(currentUs_));
+    presentFrame(frame);
 }
 
 void MainWindow::onRoiSelected(const QRect& rect)
@@ -770,8 +808,9 @@ void MainWindow::startAnalyze()
     const PipelineSettings st = currentSettings();
     if (st.tracker != TrackerType::Disc && roi_.isEmpty()) {
         statusBar()->showMessage(
-            tr("Dibuja una ROI sobre el objeto antes de seguir "
-               "(el tracker \"Disco\" sí puede detectarlo automáticamente)"), 6000);
+            tr("Dibuja una ROI sobre el objeto o pulsa \"Ajustar fotograma\" "
+               "antes de calcular (o usa el tracker \"Disco\", que lo detecta "
+               "automáticamente)"), 6000);
         return;
     }
 
@@ -782,6 +821,75 @@ void MainWindow::startAnalyze()
     req.settings = st;
     req.startUs = startUs_;
     launchWorker(req);
+}
+
+void MainWindow::onFitFrame()
+{
+    if (!reader_ || worker_ || currentFrameImage_.empty())
+        return;
+
+    cv::Mat gray;
+    cv::cvtColor(currentFrameImage_, gray, cv::COLOR_BGR2GRAY);
+    cv::GaussianBlur(gray, gray, cv::Size(0, 0), 1.2);
+    const cv::Rect full(0, 0, gray.cols, gray.rows);
+    cv::Point2f prior(gray.cols * 0.5f, gray.rows * 0.5f);
+    float guess = std::max(20.f, 0.10f * gray.cols);
+    cv::Point2f blobC;
+    int area = 0, bw = 0, bh = 0;
+    if (DiscArcFit::blobInfo(gray, full, blobC, area, bw, bh) &&
+        area > 100 && bw > 8 && bh > 8) {
+        const float aspect = static_cast<float>(bw) / static_cast<float>(bh);
+        if (aspect > 0.4f && aspect < 2.5f) {
+            guess = std::clamp(std::sqrt(static_cast<float>(area) / static_cast<float>(CV_PI)),
+                               10.f, 0.45f * std::min(gray.cols, gray.rows));
+            prior = blobC;
+        }
+    }
+    const DiscArcEstimate seed = DiscArcFit::fitDisc(gray, full, prior, guess, 3.f);
+    if (!seed.ok || seed.radius <= 0.f ||
+        cv::norm(seed.center - prior) > 2.0f * guess) {
+        statusBar()->showMessage(
+            tr("No se ha encontrado un disco creíble en este fotograma. "
+               "Prueba en otro momento del vídeo (dibuja una ROI si el disco "
+               "es muy pequeño)"), 6000);
+        return;
+    }
+
+    const float side = seed.radius * 3.0f;
+    QRect roi(qRound(seed.center.x - side * 0.5f),
+              qRound(seed.center.y - side * 0.5f),
+              qRound(side), qRound(side));
+    roi = roi.intersected(QRect(0, 0, currentFrameImage_.cols, currentFrameImage_.rows));
+    if (roi.width() < 4 || roi.height() < 4) {
+        statusBar()->showMessage(tr("El disco detectado es demasiado pequeño"), 6000);
+        return;
+    }
+
+    roi_ = roi;
+    view_->setRoi(roi);
+    seedCenter_ = QPointF(seed.center.x, seed.center.y);
+    seedRadius_ = seed.radius;
+    hasSeed_ = true;
+    view_->setCircle(seedCenter_, seedRadius_, false);
+    startUs_ = currentUs_;
+    startIndex_ = reader_ ? static_cast<int64_t>(std::llround(currentUs_ * reader_->fps() / 1e6)) : 0;
+    statusBar()->showMessage(
+        tr("Disco detectado: centro (%1,%2), radio %3 px. Pulsa \"Calcular "
+           "automáticamente\" para seguirlo en todo el vídeo")
+            .arg(seed.center.x)
+            .arg(seed.center.y)
+            .arg(seed.radius),
+        6000);
+    updateStabilizationUi();
+    markProjectModified();
+}
+
+void MainWindow::stopProcessing()
+{
+    if (worker_)
+        worker_->requestInterruption();
+    if (videoExportWorker_)
+        videoExportWorker_->requestStop();
 }
 
 void MainWindow::togglePreview(bool enabled)
@@ -797,25 +905,200 @@ void MainWindow::togglePreview(bool enabled)
     showCurrentFrame();
 }
 
-void MainWindow::startExport()
+void MainWindow::startExportVideo()
 {
-    if (!reader_ || roi_.isEmpty() || offsets_.empty() || worker_)
+    runExportDialog(true);
+}
+
+void MainWindow::startExportPhotos()
+{
+    runExportDialog(false);
+}
+
+void MainWindow::runExportDialog(bool toVideo)
+{
+    if (!reader_ || worker_ || videoExportWorker_)
         return;
 
-    const QString outPath = QFileDialog::getSaveFileName(
-        this, tr("Exportar vídeo estabilizado"), QString(),
-        tr("Vídeo MP4 (*.mp4)"));
-    if (outPath.isEmpty())
-        return;
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Exportar vídeo"));
+    auto* lay = new QVBoxLayout(&dlg);
 
-    PipelineWorker::Request req;
-    req.mode = PipelineWorker::Mode::Export;
-    req.inPath = inPath_;
-    req.outPath = outPath;
-    req.roi = cv::Rect2f(roi_.x(), roi_.y(), roi_.width(), roi_.height());
-    req.settings = currentSettings();
-    req.startUs = startUs_;
-    launchWorker(req);
+    auto* centringGroup = new QGroupBox(tr("Contenido"), &dlg);
+    auto* centringLay = new QVBoxLayout(centringGroup);
+    auto* directRadio = new QRadioButton(tr("Directo (sin centrar)"), &dlg);
+    auto* centeredRadio = new QRadioButton(tr("Centrado (seguimiento)"), &dlg);
+    const bool canCenter = !offsets_.empty();
+    directRadio->setToolTip(tr("Re-codifica el vídeo tal cual, sin desplazar"));
+    centeredRadio->setToolTip(tr("Desplaza cada fotograma para dejar el objeto "
+                                 "fijo en el centro"));
+    centeredRadio->setEnabled(canCenter);
+    centeredRadio->setChecked(canCenter);
+    if (canCenter)
+        directRadio->setChecked(false);
+    else
+        directRadio->setChecked(true);
+    centringLay->addWidget(directRadio);
+    centringLay->addWidget(centeredRadio);
+    lay->addWidget(centringGroup);
+
+    auto* fmtLabel = new QLabel(tr("Formato"), &dlg);
+    lay->addWidget(fmtLabel);
+    auto* jpgRadio = new QRadioButton(tr("Fotos JPG"), &dlg);
+    auto* pngRadio = new QRadioButton(tr("Fotos PNG"), &dlg);
+    auto* mp4Radio = new QRadioButton(tr("Vídeo MP4"), &dlg);
+    if (toVideo)
+        mp4Radio->setChecked(true);
+    else
+        jpgRadio->setChecked(true);
+    jpgRadio->setToolTip(tr("Un imagen por fotograma del vídeo"));
+    pngRadio->setToolTip(tr("Un imagen por fotograma (sin pérdida)"));
+    mp4Radio->setToolTip(tr("Un vídeo H.264 (MP4) con todos los fotogramas"));
+    lay->addWidget(jpgRadio);
+    lay->addWidget(pngRadio);
+    lay->addWidget(mp4Radio);
+
+    auto* resLabel = new QLabel(tr("Resolución"), &dlg);
+    lay->addWidget(resLabel);
+    auto* resCombo = new QComboBox(&dlg);
+    resCombo->addItem(tr("Original"),
+                      static_cast<int>(VideoExportWorker::Resolution::Original));
+    resCombo->addItem(tr("HD (1280×720)"),
+                      static_cast<int>(VideoExportWorker::Resolution::HD));
+    resCombo->addItem(tr("FHD (1920×1080)"),
+                      static_cast<int>(VideoExportWorker::Resolution::FHD));
+    resCombo->addItem(tr("2K (2560×1440)"),
+                      static_cast<int>(VideoExportWorker::Resolution::QHD));
+    resCombo->addItem(tr("4K (3840×2160)"),
+                      static_cast<int>(VideoExportWorker::Resolution::UHD));
+    resCombo->setCurrentIndex(0);
+    lay->addWidget(resCombo);
+
+    auto* fpsLabel = new QLabel(tr("FPS (solo vídeo)"), &dlg);
+    lay->addWidget(fpsLabel);
+    auto* fpsCombo = new QComboBox(&dlg);
+    fpsCombo->setEditable(true);
+    if (reader_)
+        fpsCombo->addItem(QString::number(reader_->fps(), 'f', 1));
+    fpsCombo->addItems({QStringLiteral("10"), QStringLiteral("5"), QStringLiteral("24"),
+                        QStringLiteral("30")});
+    fpsCombo->setCurrentIndex(reader_ ? 0 : 1);
+    lay->addWidget(fpsCombo);
+
+    auto* smoothGroup = new QGroupBox(tr("Suavizar transiciones (solo vídeo)"), &dlg);
+    auto* smoothLay = new QVBoxLayout(smoothGroup);
+    auto* interpRow = new QHBoxLayout();
+    auto* interpCombo = new QComboBox(&dlg);
+    interpCombo->addItem(tr("Sin suavizado"), 0);
+    interpCombo->addItem(tr("1 intermedio"), 1);
+    interpCombo->addItem(tr("2 intermedios"), 2);
+    interpCombo->addItem(tr("3 intermedios"), 3);
+    interpCombo->addItem(tr("4 intermedios"), 4);
+    interpCombo->setCurrentIndex(2);
+    interpCombo->setToolTip(tr("Fotogramas generados entre cada par de fotogramas "
+                               "para que la transición no sea brusca"));
+    interpRow->addWidget(new QLabel(tr("Fotogramas intermedios"), &dlg));
+    interpRow->addWidget(interpCombo, 1);
+    smoothLay->addLayout(interpRow);
+    auto* brightChk = new QCheckBox(tr("Normalizar brillo entre fotogramas"), &dlg);
+    brightChk->setChecked(true);
+    brightChk->setToolTip(tr("Escala el brillo de cada fotograma al del primero para "
+                             "evitar el parpadeo"));
+    smoothLay->addWidget(brightChk);
+    lay->addWidget(smoothGroup);
+
+    auto* destLabel = new QLabel(tr("Destino"), &dlg);
+    lay->addWidget(destLabel);
+    auto* destRow = new QHBoxLayout();
+    auto* destEdit = new QLineEdit(&dlg);
+    destEdit->setReadOnly(true);
+    auto* browseBtn = new QPushButton(tr("Examinar..."), &dlg);
+    destRow->addWidget(destEdit, 1);
+    destRow->addWidget(browseBtn);
+    lay->addLayout(destRow);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Exportar"));
+    lay->addWidget(buttons);
+
+    const auto chooseDest = [&]() {
+        if (mp4Radio->isChecked()) {
+            const QString f = QFileDialog::getSaveFileName(
+                this, tr("Vídeo de salida"), inPath_ + QStringLiteral(".centrado.mp4"),
+                tr("MP4 (*.mp4)"));
+            if (!f.isEmpty())
+                destEdit->setText(f);
+        } else {
+            const QString dir = QFileDialog::getExistingDirectory(
+                this, tr("Carpeta de salida"), inPath_);
+            if (!dir.isEmpty())
+                destEdit->setText(dir);
+        }
+    };
+    connect(browseBtn, &QPushButton::clicked, &dlg, chooseDest);
+    const auto updateFpsEnabled = [&]() {
+        const bool isMp4 = mp4Radio->isChecked();
+        fpsCombo->setEnabled(isMp4);
+        smoothGroup->setEnabled(isMp4);
+    };
+    connect(mp4Radio, &QRadioButton::toggled, &dlg, updateFpsEnabled);
+    updateFpsEnabled();
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    if (destEdit->text().isEmpty()) {
+        QMessageBox::warning(this, tr("AstroTracker"),
+                             tr("Elige un destino de exportación."));
+        return;
+    }
+
+    VideoExportWorker::Settings st;
+    if (mp4Radio->isChecked()) {
+        st.format = VideoExportWorker::Format::Mp4;
+        st.outFile = destEdit->text();
+        bool okFps = false;
+        const double fps = fpsCombo->currentText().toDouble(&okFps);
+        st.fps = (okFps && fps > 0.0) ? fps : 10.0;
+    } else {
+        st.format = pngRadio->isChecked() ? VideoExportWorker::Format::Png
+                                          : VideoExportWorker::Format::Jpg;
+        st.outDir = destEdit->text();
+    }
+    st.resolution = static_cast<VideoExportWorker::Resolution>(resCombo->currentData().toInt());
+    st.borderMode = borderCombo_->currentIndex();
+    st.interp = interpCombo->currentData().toInt();
+    st.normalizeBrightness = brightChk->isChecked();
+
+    const std::vector<cv::Point2f> exportOffsets =
+        centeredRadio->isChecked() ? offsets_ : std::vector<cv::Point2f>{};
+
+    videoExportWorker_ = new VideoExportWorker(inPath_, exportOffsets, st, this);
+    connect(videoExportWorker_, &VideoExportWorker::progress, this,
+            &MainWindow::onWorkerProgress);
+    connect(videoExportWorker_, &VideoExportWorker::finished, this,
+            &MainWindow::onVideoExportFinished);
+    connect(videoExportWorker_, &QThread::finished, videoExportWorker_, &QObject::deleteLater);
+
+    setBusy(true);
+    progressBar_->setRange(0, static_cast<int>(reader_->frameCount()));
+    progressBar_->setValue(0);
+    progressBar_->setVisible(true);
+    statusBar()->showMessage(tr("Exportando secuencia..."));
+    videoExportWorker_->start();
+}
+
+void MainWindow::onVideoExportFinished(bool ok, const QString& error, int frames)
+{
+    videoExportWorker_ = nullptr;
+    setBusy(false);
+    progressBar_->setVisible(false);
+    if (ok)
+        statusBar()->showMessage(tr("Exportado: %1 (%2 elementos)").arg(inPath_).arg(frames));
+    else
+        statusBar()->showMessage(tr("Error al exportar: %1").arg(error));
+    updateStabilizationUi();
 }
 
 void MainWindow::launchWorker(const PipelineWorker::Request& req)
@@ -845,6 +1128,7 @@ void MainWindow::onWorkerProgress(int done, int total)
 }
 
 void MainWindow::onAnalyzeFinished(bool ok, const QString& error, QVector<QPointF> offsets,
+                                   QVector<TrackSample> samples,
                                    int frames, int valid, double meanConfidence)
 {
     Q_UNUSED(error);
@@ -854,12 +1138,15 @@ void MainWindow::onAnalyzeFinished(bool ok, const QString& error, QVector<QPoint
         for (const QPointF& p : offsets)
             offsets_.push_back(cv::Point2f(static_cast<float>(p.x()),
                                            static_cast<float>(p.y())));
+        trackSamples_ = samples;
+        hasSeed_ = false;
         previewEnabled_ = true;
         previewAction_->setChecked(true);
         view_->setRoiEnabled(false);
         showCurrentFrame();
         statusBar()->showMessage(
-            tr("Seguimiento: %1 frames, %2 válidos, confianza %3%")
+            tr("Seguimiento: %1 frames, %2 válidos, %3% confianza. "
+               "El objeto queda fijo y centrado en el visor \"Centrado\"")
                 .arg(frames)
                 .arg(valid)
                 .arg(meanConfidence * 100.0, 0, 'f', 1));
@@ -921,15 +1208,21 @@ void MainWindow::updateStabilizationUi()
 {
     const bool canTrack = reader_ != nullptr && worker_ == nullptr;
     analyzeAction_->setEnabled(canTrack);
-    exportAction_->setEnabled(canTrack && !offsets_.empty());
+    fitAction_->setEnabled(canTrack);
+    const bool canExport = canTrack;
+    exportVideoAction_->setEnabled(canExport);
+    exportPhotosAction_->setEnabled(canExport);
     previewAction_->setEnabled(!offsets_.empty());
 }
 
 void MainWindow::setBusy(bool busy)
 {
     analyzeAction_->setEnabled(!busy);
-    exportAction_->setEnabled(!busy);
+    fitAction_->setEnabled(!busy);
+    exportVideoAction_->setEnabled(!busy);
+    exportPhotosAction_->setEnabled(!busy);
     previewAction_->setEnabled(!busy);
+    stopAction_->setEnabled(busy);
     playAction_->setEnabled(!busy && reader_);
     refreshProjectUi();
 }
@@ -945,37 +1238,93 @@ void MainWindow::updateTransportUi()
     // Grupo "Vídeo" del dock: solo en pestaña Vídeo.
     if (videoGroup_)
         videoGroup_->setVisible(onVideoTab);
+}
 
-    // Update tracking panel mode.
-    if (trackingPanel_)
-        trackingPanel_->setMode(onVideoTab);
+void MainWindow::restoreDocks()
+{
+    if (trackDock_)
+        trackDock_->setVisible(true);
+    if (logDock_)
+        logDock_->setVisible(true);
+    if (infoDock_)
+        infoDock_->setVisible(true);
+    if (trackDock_)
+        addDockWidget(Qt::LeftDockWidgetArea, trackDock_);
+    if (logDock_)
+        addDockWidget(Qt::BottomDockWidgetArea, logDock_);
+    if (infoDock_)
+        addDockWidget(Qt::RightDockWidgetArea, infoDock_);
+    if (logDock_)
+        resizeDocks({logDock_}, {160}, Qt::Vertical);
+}
+
+void MainWindow::installShortcuts()
+{
+    shortcuts_ = new ShortcutManager(this);
+    shortcuts_->install(this);
+    connect(shortcuts_, &ShortcutManager::triggered, this,
+            [this](ShortcutManager::Action a) {
+                switch (a) {
+                case ShortcutManager::Action::OpenFile:
+                    openFile();
+                    break;
+                case ShortcutManager::Action::PlayPause:
+                    playPause();
+                    break;
+                case ShortcutManager::Action::Stop:
+                    stop();
+                    break;
+                case ShortcutManager::Action::StepForward:
+                case ShortcutManager::Action::NextFrame:
+                    stepForward();
+                    break;
+                case ShortcutManager::Action::StepBack:
+                case ShortcutManager::Action::PrevFrame:
+                    stepBackward();
+                    break;
+                case ShortcutManager::Action::StartAnalyze:
+                    startAnalyze();
+                    break;
+                case ShortcutManager::Action::TogglePreview:
+                    togglePreview(!previewEnabled_);
+                    break;
+                case ShortcutManager::Action::StartExport:
+                    startExportVideo();
+                    break;
+                case ShortcutManager::Action::ToggleInfo:
+                    infoDock_->setVisible(!infoDock_->isVisible());
+                    break;
+                case ShortcutManager::Action::ZoomIn:
+                    view_->zoomIn();
+                    resultView_->zoomIn();
+                    break;
+                case ShortcutManager::Action::ZoomOut:
+                    view_->zoomOut();
+                    resultView_->zoomOut();
+                    break;
+                case ShortcutManager::Action::ZoomFit:
+                    view_->setZoomFit();
+                    resultView_->setZoomFit();
+                    break;
+                case ShortcutManager::Action::Zoom100:
+                    view_->setZoomPercent(100);
+                    resultView_->setZoomPercent(100);
+                    break;
+                default:
+                    break;
+                }
+            });
 }
 
 void MainWindow::updatePanelMode()
 {
-    if (!panelManager_) return;
-
     const bool onVideoTab = tabs_->currentIndex() == 0;
     const bool hasContent = reader_ != nullptr || photosPanel_->isOpen();
-    const bool analyzed = !offsets_.empty() || photosPanel_->isOpen();
+    const bool onPhotoTab = !onVideoTab;
 
-    if (!hasContent) {
-        panelManager_->applyMode("empty");
-    } else if (worker_) {
-        panelManager_->applyMode("processing");
-    } else if (analyzed) {
-        panelManager_->applyMode("analyzed");
-    } else if (onVideoTab) {
-        panelManager_->applyMode("loaded_video");
-    } else {
-        panelManager_->applyMode("loaded_photo");
-    }
-
-    // Update info panel visibility.
     if (infoPanel_) {
         infoPanel_->setTrackingVisible(hasContent);
         infoPanel_->setFrameInfoVisible(hasContent);
-        const bool onPhotoTab = tabs_->currentIndex() == 1;
         infoPanel_->setExifVisible(onPhotoTab && photosPanel_->isOpen());
         if (!onPhotoTab || !photosPanel_->isOpen())
             infoPanel_->clearExifInfo();
@@ -1036,7 +1385,7 @@ void MainWindow::aboutQt()
 
 bool MainWindow::anyBusy() const
 {
-    return photosPanel_->isBusy() || worker_ != nullptr;
+    return photosPanel_->isBusy() || worker_ != nullptr || videoExportWorker_ != nullptr;
 }
 
 bool MainWindow::hasContent() const
@@ -1074,19 +1423,23 @@ void MainWindow::applyVideo(const PhotoProjectVideo& v)
             return;
     }
 
-    trackerCombo_->setCurrentIndex(std::clamp(v.tracker, 0, 1));
+    trackerCombo_->setCurrentIndex(std::clamp(v.tracker, 0, 2));
     smoothSpin_->setValue(v.smoothingAlpha);
     borderCombo_->setCurrentIndex(std::clamp(v.borderMode, 0, 1));
 
     // La ROI y el inicio del análisis; los offsets del seguimiento no se
-    // guardan (se recalculan con "Seguir").
+    // guardan (se recalculan con "Calcular automáticamente").
     roi_ = v.hasRoi ? QRect(v.roiX, v.roiY, v.roiW, v.roiH) : QRect();
     view_->setRoiEnabled(true);
     if (!roi_.isEmpty())
         view_->setRoi(roi_);
     else
         view_->clearRoi();
+    view_->clearCircle();
+    resultView_->clearCircle();
     offsets_.clear();
+    trackSamples_.clear();
+    hasSeed_ = false;
     previewEnabled_ = false;
     previewAction_->setChecked(false);
     startUs_ = v.startUs;
@@ -1101,7 +1454,8 @@ void MainWindow::applyVideo(const PhotoProjectVideo& v)
     }
     updateStabilizationUi();
     statusBar()->showMessage(
-        tr("Vídeo restaurado: pulsa \"Seguir\" para recalcular el análisis"), 6000);
+        tr("Vídeo restaurado: pulsa \"Calcular automáticamente\" para recalcular "
+           "el análisis"), 6000);
 }
 
 void MainWindow::closeVideo()
@@ -1113,11 +1467,16 @@ void MainWindow::closeVideo()
     inPath_.clear();
     roi_ = QRect();
     offsets_.clear();
+    trackSamples_.clear();
+    currentFrameImage_ = cv::Mat();
+    hasSeed_ = false;
     previewEnabled_ = false;
     previewAction_->setChecked(false);
     view_->setFrame(cv::Mat());
     resultView_->setFrame(cv::Mat());
     view_->clearRoi();
+    view_->clearCircle();
+    resultView_->clearCircle();
     timeline_->setEnabled(false);
     timeline_->setValue(0);
     timeline_->setFrameLabel(-1, -1);
@@ -1410,5 +1769,10 @@ void MainWindow::closeEvent(QCloseEvent* event)
         event->ignore();
         return;
     }
+
+    QSettings settings;
+    settings.setValue("UI/geometry", saveGeometry());
+    settings.setValue("UI/state", saveState());
+
     event->accept();
 }

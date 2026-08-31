@@ -3,7 +3,7 @@
 #include "raw/RawDecoder.h"
 #include "raw/RawExifReader.h"
 
-#ifdef ASTROTRACKER_HAS_QT_EXIF
+#ifdef ASTROTRACKER_HAS_EXIV2
 #include "stills/ExifReader.h"
 #endif
 
@@ -346,7 +346,7 @@ PhotoExifInfo PhotoSequenceReader::exifInfo(int64_t idx) const
     if (isRawExt(path))
         return RawExifReader::readExif(path);
 
-#ifdef ASTROTRACKER_HAS_QT_EXIF
+#ifdef ASTROTRACKER_HAS_EXIV2
     return ExifReader::readExif(path);
 #else
     return {};

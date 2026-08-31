@@ -13,6 +13,7 @@
 class VideoView;
 class PhotoPanel;
 class IVideoReader;
+class VideoExportWorker;
 class QTimer;
 class QAction;
 class QMenu;
@@ -26,20 +27,13 @@ class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QGroupBox;
+struct Frame;
 
 // New UI components
 class ThemeManager;
-class ViewportWidget;
-class PanelManager;
-class InputPanel;
-class ObjectPanel;
-class TrackingPanel;
-class TransformPanel;
-class ExportPanel;
 class InfoPanel;
 class TimelineWidget;
-class TransportBar;
-class FilmstripWidget;
+class ShortcutManager;
 
 class MainWindow : public QMainWindow
 {
@@ -64,12 +58,18 @@ private slots:
     void onRoiSelected(const QRect& rect);
 
     void startAnalyze();
+    void onFitFrame();
+    void stopProcessing();
     void togglePreview(bool enabled);
-    void startExport();
+    void startExportVideo();
+    void startExportPhotos();
+    void runExportDialog(bool toVideo);
     void onWorkerProgress(int done, int total);
     void onAnalyzeFinished(bool ok, const QString& error, QVector<QPointF> offsets,
+                           QVector<TrackSample> samples,
                            int frames, int valid, double meanConfidence);
     void onExportFinished(bool ok, const QString& error, int frames, int valid);
+    void onVideoExportFinished(bool ok, const QString& error, int frames);
     void onWorkerFinished();
     void onLogMessage(int level, const QString& text);
 
@@ -84,14 +84,18 @@ private slots:
 
 private:
     void setupUi();
+    void installShortcuts();
     QWidget* createVideoPage();
     void openPhotos();
     void populateRecentsMenu(QMenu* menu);
     void rememberVideoPath(const QString& path);
     void showCurrentFrame();
+    void presentFrame(const Frame& frame);
+    void updateTrackCircle(int64_t frameIndex);
     void updateTransportUi();
     void updateStabilizationUi();
     void updatePanelMode();
+    void restoreDocks();
     QString formatTime(int64_t us) const;
     PipelineSettings currentSettings() const;
     cv::Mat displayFrame(const cv::Mat& src, int64_t frameIndex) const;
@@ -123,20 +127,16 @@ private:
     QToolBar* transportToolBar_ = nullptr;
     QAction* analyzeAction_ = nullptr;
     QAction* previewAction_ = nullptr;
-    QAction* exportAction_ = nullptr;
+    QAction* exportVideoAction_ = nullptr;
+    QAction* exportPhotosAction_ = nullptr;
+    QAction* fitAction_ = nullptr;
+    QAction* stopAction_ = nullptr;
 
     // --- New UI components ---
-    ViewportWidget* originalViewport_ = nullptr;
-    ViewportWidget* resultViewport_ = nullptr;
-    PanelManager* panelManager_ = nullptr;
-    InputPanel* inputPanel_ = nullptr;
-    ObjectPanel* objectPanel_ = nullptr;
-    TrackingPanel* trackingPanel_ = nullptr;
-    TransformPanel* transformPanel_ = nullptr;
-    ExportPanel* exportPanel_ = nullptr;
     InfoPanel* infoPanel_ = nullptr;
     TimelineWidget* timeline_ = nullptr;
-    TransportBar* transportBar_ = nullptr;
+    ShortcutManager* shortcuts_ = nullptr;
+    QDockWidget* infoDock_ = nullptr;
 
     // Log dock (kept from old design)
     QProgressBar* progressBar_ = nullptr;
@@ -144,6 +144,8 @@ private:
     QPlainTextEdit* logView_ = nullptr;
     QCheckBox* debugCheck_ = nullptr;
     QAction* logDockAction_ = nullptr;
+    QAction* trackDockAction_ = nullptr;
+    QAction* infoDockAction_ = nullptr;
 
     // Project actions
     QAction* openProjectAction_ = nullptr;
@@ -172,8 +174,18 @@ private:
     int64_t totalUs_ = 0;
     int64_t totalFrames_ = 0;
     QRect roi_;
+    // Último frame mostrado (para "Ajustar fotograma": detectar el disco sin
+    // re-leer el vídeo) y muestras del seguimiento del análisis por frame.
+    cv::Mat currentFrameImage_;
+    QVector<TrackSample> trackSamples_;
+    // Círculo semilla de "Ajustar fotograma" (visible hasta que el análisis
+    // genere muestras reales).
+    QPointF seedCenter_{0.f, 0.f};
+    float seedRadius_ = 0.f;
+    bool hasSeed_ = false;
 
     PipelineWorker* worker_ = nullptr;
+    VideoExportWorker* videoExportWorker_ = nullptr;
     std::vector<cv::Point2f> offsets_;
     bool previewEnabled_ = false;
     int64_t startIndex_ = 0;

@@ -30,8 +30,10 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
                                            const cv::Rect2f& roi,
                                            const PipelineSettings& settings,
                                            PipelineStats* stats,
+                                           std::vector<TrackSample>* samples,
                                            const PipelineProgress& progress,
-                                           int64_t startUs)
+                                           int64_t startUs,
+                                           const PipelineCancel& cancel)
 {
     std::vector<cv::Point2f> offsets;
 
@@ -124,15 +126,24 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
     PipelineStats s;
     int count = 0;
     double confSum = 0.0;
+    // Radio con el que se dibuja el objeto con los trackers clásicos (roi).
+    const float trackRadius = roiValid
+                                  ? 0.5f * std::min(roi.width, roi.height)
+                                  : 0.f;
 
     do {
         float confidence = 0.f;
         int bucket = 0; // 0 válida, 1 incierta, 2 perdida
         cv::Point2f current;
+        TrackSample sample;
         if (discTracker) {
             const DiscTrack t = discTracker->track(frame.image);
             current = t.center;
             confidence = t.confidence;
+            sample.center = t.center;
+            sample.radius = t.radius;
+            sample.status = t.status;
+            sample.predicted = t.predicted;
             if (!t.predicted && t.status == TrackStatus::VALID)
                 bucket = 0;
             else if (t.predicted && t.status == TrackStatus::LOST)
@@ -147,7 +158,13 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
             bucket = r.found ? 0
                              : (model.status() == TrackStatus::UNCERTAIN ? 1 : 2);
             current = model.position();
+            sample.center = current;
+            sample.radius = trackRadius;
+            sample.status = model.status();
+            sample.predicted = !r.found;
         }
+        if (samples)
+            samples->push_back(sample);
 
         offsets.push_back(stabilizer.update(current));
         if (bucket == 0)
@@ -160,6 +177,8 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
         ++count;
         if (progress)
             progress(count, static_cast<int>(total > 0 ? total : count));
+        if (cancel && cancel())
+            break;
     } while (reader.readNext(frame));
 
     s.frames = count;
@@ -173,10 +192,10 @@ std::vector<cv::Point2f> Pipeline::analyze(const std::string& inPath,
 bool Pipeline::run(const std::string& inPath, const std::string& outPath,
                    const cv::Rect2f& roi, const PipelineSettings& settings,
                    PipelineStats* stats, const PipelineProgress& progress,
-                   int64_t startUs) const
+                   int64_t startUs, const PipelineCancel& cancel) const
 {
     PipelineStats s;
-    const std::vector<cv::Point2f> offsets = analyze(inPath, roi, settings, &s, progress, startUs);
+    const std::vector<cv::Point2f> offsets = analyze(inPath, roi, settings, &s, nullptr, progress, startUs, cancel);
     if (offsets.empty())
         return false;
 

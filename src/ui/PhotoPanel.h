@@ -83,7 +83,9 @@ private slots:
     void onCircleSelected(const QPointF& center, double radius);
     void onFitDisc();
     void onLockToggle(bool locked);
-    void startExport();
+    void startExportVideo();
+    void startExportPhotos();
+    void runExportDialog(bool toVideo);
     void startNew();
     void onFilmstripChanged(QListWidgetItem* item);
     void onPhotoProcessed(int64_t index);
@@ -129,7 +131,8 @@ private:
     QAction* nextAction_ = nullptr;
     QAction* analyzeAction_ = nullptr;
     QAction* fitAction_ = nullptr;
-    QAction* exportAction_ = nullptr;
+    QAction* exportVideoAction_ = nullptr;
+    QAction* exportPhotosAction_ = nullptr;
     QAction* circleModeAction_ = nullptr;
     QAction* stopAction_ = nullptr;
     QAction* lockAction_ = nullptr;

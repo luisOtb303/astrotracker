@@ -2,6 +2,7 @@
 
 #include <QPainter>
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
@@ -65,6 +66,38 @@ void VideoView::setLoading(bool loading)
     update();
 }
 
+void VideoView::setZoomFit()
+{
+    zoom_ = 1.0;
+    offset_ = QPointF();
+    update();
+}
+
+void VideoView::setZoomPercent(int percent)
+{
+    if (image_.isNull())
+        return;
+    const int w = std::max(1, width());
+    const int h = std::max(1, height());
+    const double fit = std::min(w / static_cast<double>(image_.width()),
+                                h / static_cast<double>(image_.height()));
+    const double target = percent / 100.0;
+    zoom_ = std::max(1.0, target / std::max(fit, 1e-6));
+    update();
+}
+
+void VideoView::zoomIn()
+{
+    zoom_ = std::max(1.0, zoom_ * 1.25);
+    update();
+}
+
+void VideoView::zoomOut()
+{
+    zoom_ = std::max(1.0, zoom_ / 1.25);
+    update();
+}
+
 void VideoView::setCircle(const QPointF& center, double radius, bool predicted)
 {
     circleCenter_ = center;
@@ -90,7 +123,16 @@ QRect VideoView::imageRect() const
                                   height() / static_cast<double>(image_.height()));
     const int w = static_cast<int>(image_.width() * scale);
     const int h = static_cast<int>(image_.height() * scale);
-    return QRect((width() - w) / 2, (height() - h) / 2, w, h);
+    QRect r((width() - w) / 2, (height() - h) / 2, w, h);
+
+    if (zoom_ == 1.0)
+        return r;
+
+    const int zw = static_cast<int>(w * zoom_);
+    const int zh = static_cast<int>(h * zoom_);
+    return QRect(r.center().x() - zw / 2 + static_cast<int>(offset_.x()),
+                 r.center().y() - zh / 2 + static_cast<int>(offset_.y()),
+                 zw, zh);
 }
 
 QRect VideoView::toWidget(const QRect& imgRect) const
@@ -185,6 +227,13 @@ void VideoView::paintEvent(QPaintEvent*)
 
 void VideoView::mousePressEvent(QMouseEvent* event)
 {
+    if (event->button() == Qt::MiddleButton && !image_.isNull()) {
+        panning_ = true;
+        panStart_ = event->pos();
+        offsetOrigin_ = offset_;
+        return;
+    }
+
     if (event->button() != Qt::LeftButton || image_.isNull())
         return;
 
@@ -228,6 +277,12 @@ void VideoView::mousePressEvent(QMouseEvent* event)
 
 void VideoView::mouseMoveEvent(QMouseEvent* event)
 {
+    if (panning_) {
+        offset_ = offsetOrigin_ + (event->pos() - panStart_);
+        update();
+        return;
+    }
+
     if (selecting_) {
         selection_ = QRect(selStart_, event->pos()).normalized();
         update();
@@ -258,6 +313,11 @@ void VideoView::mouseMoveEvent(QMouseEvent* event)
 
 void VideoView::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (event->button() == Qt::MiddleButton) {
+        panning_ = false;
+        return;
+    }
+
     if (event->button() != Qt::LeftButton)
         return;
 
@@ -294,4 +354,15 @@ void VideoView::mouseReleaseEvent(QMouseEvent* event)
 
     if (!roi.isEmpty())
         emit roiSelected(roi);
+}
+
+void VideoView::wheelEvent(QWheelEvent* event)
+{
+    if (image_.isNull())
+        return;
+    const int delta = event->angleDelta().y();
+    if (delta > 0)
+        zoomIn();
+    else if (delta < 0)
+        zoomOut();
 }

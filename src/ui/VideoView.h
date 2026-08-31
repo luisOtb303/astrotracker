@@ -23,6 +23,13 @@ public:
     // segundo plano.
     void setLoading(bool loading);
 
+    // Zoom: 1.0 = ajustar al tamaño del visor; mayor = factor sobre ese ajuste.
+    void setZoomFit();
+    void setZoomPercent(int percent);
+    void zoomIn();
+    void zoomOut();
+    bool isZoomed() const { return zoom_ != 1.0; }
+
     // Modo círculo: arrastrar pinta desde el centro, mover arrastra el centro
     // y el borde cambia el radio.
     void setCircleEnabled(bool enabled);
@@ -41,6 +48,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
     enum class CircleEdit
@@ -72,4 +80,11 @@ private:
     CircleEdit circleEdit_ = CircleEdit::None;
     QPointF dragStart_;      // imagen
     QPointF dragOrigin_;     // imagen
+
+    // Zoom/pan.
+    double zoom_ = 1.0;      // 1.0 = ajustar al visor; mayor = escala sobre el ajuste
+    QPointF offset_;         // desplazamiento en píxeles de widget
+    bool panning_ = false;
+    QPointF panStart_;
+    QPointF offsetOrigin_;
 };

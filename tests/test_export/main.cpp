@@ -8,7 +8,9 @@
 
 #include "common/Frame.h"
 #include "stills/PhotoExportWorker.h"
+#include "stills/VideoExportWorker.h"
 #include "video/FFmpegVideoReader.h"
+#include "video/FFmpegVideoWriter.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -179,6 +181,110 @@ int main(int argc, char** argv)
             char msg[64];
             std::snprintf(msg, sizeof msg, "MP4: %d frames, se esperaban %d", frames, expected);
             fail(__FILE__, __LINE__, msg);
+        }
+    }
+
+    // --- VideoExportWorker: vídeo -> PNG directo (sin centrar) y vídeo -> MP4.
+    // Genera un vídeo de entrada en el que un disco se desplaza en línea recta entre
+    // frames, muy por encima del centro del encuadre.
+    {
+        constexpr int VW = 640;
+        constexpr int VH = 360;
+        constexpr int VN = 12;
+        const std::string srcVideo = (root / "src.mp4").string();
+        const cv::Point2f startPos(120.f, 90.f);
+        const cv::Point2f endPos(500.f, 270.f);
+        {
+            FFmpegVideoWriter w;
+            if (!w.open(srcVideo, VW, VH, 25.0))
+                return 1;
+            for (int i = 0; i < VN; ++i) {
+                const float t = VN > 1 ? static_cast<float>(i) / (VN - 1) : 0.f;
+                const cv::Point2f c = startPos + (endPos - startPos) * t;
+                cv::Mat frame(VH, VW, CV_8UC3, cv::Scalar(12, 12, 12));
+                cv::circle(frame, c, 20, cv::Scalar(255, 255, 255), cv::FILLED);
+                if (!w.write(frame))
+                    return 1;
+            }
+            w.close();
+        }
+
+        // Sin offsets (directo): los PNG deben mantener el disco donde estaba.
+        {
+            const fs::path outDir = root / "vf";
+            fs::create_directories(outDir, ec);
+
+            VideoExportWorker::Settings st;
+            st.format = VideoExportWorker::Format::Png;
+            st.resolution = VideoExportWorker::Resolution::Original;
+            st.outDir = QString::fromStdString(outDir.string());
+
+            VideoExportWorker worker(QString::fromStdString(srcVideo), {}, st);
+            worker.run();
+
+            int n = 0;
+            for (int i = 0; i < VN; ++i) {
+                char name[32];
+                std::snprintf(name, sizeof name, "frame_%05d.png", i);
+                const cv::Mat out = cv::imread((outDir / name).string());
+                if (out.empty()) {
+                    fail(__FILE__, __LINE__, "no se leyó el PNG directo " + std::string(name));
+                    continue;
+                }
+                const float t = VN > 1 ? static_cast<float>(i) / (VN - 1) : 0.f;
+                const cv::Point2f expected = startPos + (endPos - startPos) * t;
+                const cv::Point2f c = centroid(out);
+                if (std::abs(c.x - expected.x) >= 5.f || std::abs(c.y - expected.y) >= 5.f) {
+                    char msg[128];
+                    std::snprintf(msg, sizeof msg,
+                                  "PNG directo %d: disco en (%.1f, %.1f), se esperaba (%.1f, %.1f)",
+                                  i, c.x, c.y, expected.x, expected.y);
+                    fail(__FILE__, __LINE__, msg);
+                }
+                ++n;
+            }
+            if (n != VN) {
+                char msg[64];
+                std::snprintf(msg, sizeof msg, "PNG directo: %d frames, se esperaban %d", n, VN);
+                fail(__FILE__, __LINE__, msg);
+            }
+        }
+
+        // Con offsets centradores: el disco debe quedar en el centro del PNG.
+        {
+            const fs::path outDir = root / "vfc";
+            fs::create_directories(outDir, ec);
+
+            std::vector<cv::Point2f> offsets;
+            for (int i = 0; i < VN; ++i) {
+                const float t = VN > 1 ? static_cast<float>(i) / (VN - 1) : 0.f;
+                const cv::Point2f c = startPos + (endPos - startPos) * t;
+                offsets.push_back({VW / 2.f - c.x, VH / 2.f - c.y});
+            }
+
+            VideoExportWorker::Settings st;
+            st.format = VideoExportWorker::Format::Png;
+            st.resolution = VideoExportWorker::Resolution::Original;
+            st.outDir = QString::fromStdString(outDir.string());
+
+            VideoExportWorker worker(QString::fromStdString(srcVideo), offsets, st);
+            worker.run();
+
+            for (int i = 0; i < VN; ++i) {
+                char name[32];
+                std::snprintf(name, sizeof name, "frame_%05d.png", i);
+                const cv::Mat out = cv::imread((outDir / name).string());
+                if (out.empty())
+                    continue;
+                const cv::Point2f c = centroid(out);
+                if (std::abs(c.x - VW / 2.0f) >= 5.f || std::abs(c.y - VH / 2.0f) >= 5.f) {
+                    char msg[128];
+                    std::snprintf(msg, sizeof msg,
+                                  "PNG centrado %d: disco en (%.1f, %.1f), centro (%.1f, %.1f)",
+                                  i, c.x, c.y, VW / 2.0, VH / 2.0);
+                    fail(__FILE__, __LINE__, msg);
+                }
+            }
         }
     }
 

@@ -132,10 +132,16 @@ PhotoPanel::PhotoPanel(QWidget* parent)
                               "círculo que forma la fase visible (parcial, creciente o "
                               "corona)"));
     connect(fitAction_, &QAction::triggered, this, &PhotoPanel::onFitDisc);
-    exportAction_ = tb->addAction(tr("Exportar centradas..."));
-    exportAction_->setEnabled(false);
-    exportAction_->setToolTip(tr("Guardar las fotos centradas como imágenes o como vídeo MP4"));
-    connect(exportAction_, &QAction::triggered, this, &PhotoPanel::startExport);
+    exportVideoAction_ = tb->addAction(tr("Exportar vídeo..."));
+    exportVideoAction_->setEnabled(false);
+    exportVideoAction_->setToolTip(tr("Guardar la secuencia como vídeo MP4 (centrada si se "
+                                      "ha seguido, directa si no)"));
+    connect(exportVideoAction_, &QAction::triggered, this, &PhotoPanel::startExportVideo);
+    exportPhotosAction_ = tb->addAction(tr("Exportar fotos..."));
+    exportPhotosAction_->setEnabled(false);
+    exportPhotosAction_->setToolTip(tr("Guardar la secuencia como imágenes PNG/JPG (centradas "
+                                       "si se ha seguido, directas si no)"));
+    connect(exportPhotosAction_, &QAction::triggered, this, &PhotoPanel::startExportPhotos);
     stopAction_ = tb->addAction(tr("Detener"));
     stopAction_->setEnabled(false);
     stopAction_->setToolTip(tr("Detener el seguimiento o la exportación en curso"));
@@ -779,24 +785,58 @@ void PhotoPanel::onFitDisc()
     applyCircle(e.center, e.radius);
 }
 
-void PhotoPanel::startExport()
+void PhotoPanel::startExportVideo()
 {
-    if (exportWorker_ || worker_ || !analyzed_ || tracks_.empty())
+    runExportDialog(true);
+}
+
+void PhotoPanel::startExportPhotos()
+{
+    runExportDialog(false);
+}
+
+void PhotoPanel::runExportDialog(bool toVideo)
+{
+    if (exportWorker_ || worker_ || !reader_.isOpen())
         return;
 
     QDialog dlg(this);
-    dlg.setWindowTitle(tr("Exportar centradas"));
+    dlg.setWindowTitle(tr("Exportar secuencia"));
     auto* lay = new QVBoxLayout(&dlg);
+
+    // Centrado: qué se exporta ahora mismo. "Directo" siempre disponible
+    // (TL plano); "Centrado" solo si hay resultado del seguimiento.
+    auto* centringGroup = new QGroupBox(tr("Contenido"), &dlg);
+    auto* centringLay = new QVBoxLayout(centringGroup);
+    auto* directRadio = new QRadioButton(tr("Directo (sin centrar)"), &dlg);
+    auto* centeredRadio = new QRadioButton(tr("Centrado (seguimiento)"), &dlg);
+    const bool canCenter = analyzed_ && !tracks_.empty();
+    directRadio->setToolTip(tr("Exporta las fotos tal cual han sido tomadas "
+                               "(no se aplica ningún desplazamiento)"));
+    centeredRadio->setToolTip(tr("Desplaza cada foto para dejar el disco fijo "
+                                 "en el centro"));
+    centeredRadio->setEnabled(canCenter);
+    centeredRadio->setChecked(canCenter);
+    if (canCenter)
+        directRadio->setChecked(false);
+    else
+        directRadio->setChecked(true);
+    centringLay->addWidget(directRadio);
+    centringLay->addWidget(centeredRadio);
+    lay->addWidget(centringGroup);
 
     auto* fmtLabel = new QLabel(tr("Formato"), &dlg);
     lay->addWidget(fmtLabel);
     auto* jpgRadio = new QRadioButton(tr("Fotos JPG"), &dlg);
     auto* pngRadio = new QRadioButton(tr("Fotos PNG"), &dlg);
     auto* mp4Radio = new QRadioButton(tr("Vídeo MP4"), &dlg);
-    jpgRadio->setChecked(true);
-    jpgRadio->setToolTip(tr("Una imagen por foto, centrada"));
-    pngRadio->setToolTip(tr("Una imagen por foto, centrada (sin pérdida)"));
-    mp4Radio->setToolTip(tr("Un vídeo H.264 (MP4) con todas las fotos centradas"));
+    if (toVideo)
+        mp4Radio->setChecked(true);
+    else
+        jpgRadio->setChecked(true);
+    jpgRadio->setToolTip(tr("Una imagen por foto"));
+    pngRadio->setToolTip(tr("Una imagen por foto (sin pérdida)"));
+    mp4Radio->setToolTip(tr("Un vídeo H.264 (MP4) con todas las fotos"));
     lay->addWidget(jpgRadio);
     lay->addWidget(pngRadio);
     lay->addWidget(mp4Radio);
@@ -913,6 +953,12 @@ void PhotoPanel::startExport()
     st.interp = interpCombo->currentData().toInt();
     st.normalizeBrightness = brightChk->isChecked();
 
+    // Si se elige "Directo", se exporta sin centrar: se pasa la lista de tracks
+    // vacía para que el worker no aplique ningún desplazamiento (regla: nunca
+    // descartar frames, se conserva el frame tal cual).
+    const std::vector<DiscTrack> exportTracks =
+        centeredRadio->isChecked() ? tracks_ : std::vector<DiscTrack>{};
+
     QStringList paths;
     paths.reserve(static_cast<int>(reader_.count()));
     for (int64_t i = 0; i < reader_.count(); ++i)
@@ -931,7 +977,9 @@ void PhotoPanel::startExport()
         selection.push_back(sel);
     }
 
-    AppLog::info(tr("Exportando %1 fotos seleccionadas de %2 (%3, %4, %5 fps)")
+    const QString centringText = centeredRadio->isChecked() ? QStringLiteral("centrado")
+                                                            : QStringLiteral("directo");
+    AppLog::info(tr("Exportando %1 fotos seleccionadas de %2 (%3, %4, %5 fps, %6)")
                      .arg(static_cast<int>(std::count(selection.begin(), selection.end(), true)))
                      .arg(reader_.count())
                      .arg(st.format == PhotoExportWorker::Format::Mp4 ? QStringLiteral("MP4")
@@ -953,9 +1001,10 @@ void PhotoPanel::startExport()
                                     .arg(st.interp)
                                     .arg(st.normalizeBrightness ? QStringLiteral(", brillo")
                                                                : QString())
-                              : QStringLiteral("-")));
+                              : QStringLiteral("-"))
+                     .arg(centringText));
 
-    exportWorker_ = new PhotoExportWorker(paths, tracks_, displayMaxDim_, st, selection, this);
+    exportWorker_ = new PhotoExportWorker(paths, exportTracks, displayMaxDim_, st, selection, this);
     connect(exportWorker_, &PhotoExportWorker::progress, this, &PhotoPanel::onWorkerProgress);
     connect(exportWorker_, &PhotoExportWorker::finished, this, &PhotoPanel::onExportFinished);
     connect(exportWorker_, &PhotoExportWorker::photoProcessed, this,
@@ -963,7 +1012,7 @@ void PhotoPanel::startExport()
     connect(exportWorker_, &QThread::finished, exportWorker_, &QObject::deleteLater);
 
     setTrackingBusy(true);
-    emit statusMessage(tr("Exportando centradas..."));
+    emit statusMessage(tr("Exportando secuencia..."));
     emit workProgress(0, static_cast<int>(reader_.count()));
     exportWorker_->start();
 }
@@ -1002,7 +1051,8 @@ void PhotoPanel::updateTrackingUi()
     const bool ready = reader_.isOpen() && !trackingBusy_;
     analyzeAction_->setEnabled(ready && hasSeedCircle_);
     fitAction_->setEnabled(ready);
-    exportAction_->setEnabled(ready && analyzed_ && !tracks_.empty());
+    exportVideoAction_->setEnabled(ready);
+    exportPhotosAction_->setEnabled(ready);
     lockAction_->setEnabled(ready && analyzed_);
     resetAction_->setEnabled(ready);
 }

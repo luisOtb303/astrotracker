@@ -1,91 +1,77 @@
 #include "stills/ExifReader.h"
 
-#include <QImage>
-#include <QByteArray>
-#include <QString>
-#include <cmath>
+#include <exiv2/exiv2.hpp>
+
 #include <cstdlib>
+#include <string>
+
+namespace
+{
+
+std::string getString(const Exiv2::ExifData& exif, const char* key)
+{
+    const auto it = exif.findKey(Exiv2::ExifKey(key));
+    if (it != exif.end() && it->count() > 0)
+        return it->toString();
+    return {};
+}
+
+float getRational(const Exiv2::ExifData& exif, const char* key)
+{
+    const auto it = exif.findKey(Exiv2::ExifKey(key));
+    if (it == exif.end())
+        return 0.0f;
+    const Exiv2::Rational r = it->toRational();
+    if (r.second == 0)
+        return 0.0f;
+    return static_cast<float>(static_cast<double>(r.first) / r.second);
+}
+
+} // namespace
 
 PhotoExifInfo ExifReader::readExif(const std::string& path)
 {
-    return readExifQImage(path);
-}
-
-PhotoExifInfo ExifReader::readExifQImage(const std::string& path)
-{
     PhotoExifInfo info;
 
-    QImage img(QString::fromStdString(path));
-    if (img.isNull())
-        return info;
+    try {
+        auto image = Exiv2::ImageFactory::open(path);
+        if (!image)
+            return info;
+        image->readMetadata();
 
-    info.width = img.width();
-    info.height = img.height();
+        const Exiv2::ExifData& exif = image->exifData();
+        if (image->pixelWidth() > 0)
+            info.width = static_cast<int>(image->pixelWidth());
+        if (image->pixelHeight() > 0)
+            info.height = static_cast<int>(image->pixelHeight());
 
-    // Qt exposes some EXIF as image text keys for JPEG
-    const QString make = img.text("Make");
-    const QString model = img.text("Model");
-    if (!make.isEmpty() || !model.isEmpty()) {
-        info.camera = make.toStdString();
-        if (!info.camera.empty() && !model.isEmpty())
+        const std::string make = getString(exif, "Exif.Image.Make");
+        const std::string model = getString(exif, "Exif.Image.Model");
+        info.camera = make;
+        if (!info.camera.empty() && !model.empty())
             info.camera += " ";
-        info.camera += model.toStdString();
+        info.camera += model;
+
+        std::string lens = getString(exif, "Exif.Photo.LensModel");
+        if (lens.empty())
+            lens = getString(exif, "Exif.Photo.Lens");
+        info.lens = lens;
+
+        info.focalMm = getRational(exif, "Exif.Photo.FocalLength");
+        info.aperture = getRational(exif, "Exif.Photo.FNumber");
+        info.shutterSec = getRational(exif, "Exif.Photo.ExposureTime");
+
+        const std::string iso = getString(exif, "Exif.Photo.ISOSpeedRatings");
+        if (!iso.empty())
+            info.iso = std::atoi(iso.c_str());
+
+        std::string date = getString(exif, "Exif.Photo.DateTimeOriginal");
+        if (date.empty())
+            date = getString(exif, "Exif.Image.DateTime");
+        info.date = date;
+    } catch (const Exiv2::Error&) {
+        // Fichero sin metadatos legibles: se devuelve la info vacía.
     }
-
-    const QString lensMake = img.text("LensMake");
-    const QString lensModel = img.text("LensModel");
-    if (!lensModel.isEmpty()) {
-        info.lens = lensModel.toStdString();
-    } else if (!lensMake.isEmpty()) {
-        info.lens = lensMake.toStdString();
-    }
-
-    // Focal length
-    const QString focalStr = img.text("FocalLength");
-    if (!focalStr.isEmpty()) {
-        // Format: "800/1" or "50/1"
-        const QStringList parts = focalStr.split('/');
-        if (parts.size() == 2) {
-            const double num = parts[0].toDouble();
-            const double den = parts[1].toDouble();
-            if (den > 0)
-                info.focalMm = static_cast<float>(num / den);
-        }
-    }
-
-    // Aperture
-    const QString apertureStr = img.text("FNumber");
-    if (!apertureStr.isEmpty()) {
-        const QStringList parts = apertureStr.split('/');
-        if (parts.size() == 2) {
-            const double num = parts[0].toDouble();
-            const double den = parts[1].toDouble();
-            if (den > 0)
-                info.aperture = static_cast<float>(num / den);
-        }
-    }
-
-    // Exposure time
-    const QString exposureStr = img.text("ExposureTime");
-    if (!exposureStr.isEmpty()) {
-        const QStringList parts = exposureStr.split('/');
-        if (parts.size() == 2) {
-            const double num = parts[0].toDouble();
-            const double den = parts[1].toDouble();
-            if (den > 0)
-                info.shutterSec = static_cast<float>(num / den);
-        }
-    }
-
-    // ISO
-    const QString isoStr = img.text("ISOSpeedRatings");
-    if (!isoStr.isEmpty())
-        info.iso = isoStr.toInt();
-
-    // Date
-    const QString dateStr = img.text("DateTimeOriginal");
-    if (!dateStr.isEmpty())
-        info.date = dateStr.toStdString();
 
     return info;
 }

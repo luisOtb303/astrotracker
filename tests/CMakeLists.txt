@@ -170,14 +170,17 @@ add_test(NAME test_pipeline COMMAND test_pipeline ${PIPE_IN} ${PIPE_OUT})
 add_executable(test_stills test_stills/main.cpp
   ../src/stills/PhotoSequenceReader.h
   ../src/stills/PhotoSequenceReader.cpp
+  ../src/stills/ExifReader.h
+  ../src/stills/ExifReader.cpp
   ../src/raw/RawDecoder.h
   ../src/raw/RawDecoder.cpp
   ../src/raw/RawExifReader.h
   ../src/raw/RawExifReader.cpp)
 
 target_include_directories(test_stills PRIVATE ../src)
-target_compile_definitions(test_stills PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(test_stills PRIVATE ${OpenCV_LIBS} libraw)
+target_compile_definitions(test_stills PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN
+  ASTROTRACKER_HAS_EXIV2)
+target_link_libraries(test_stills PRIVATE ${OpenCV_LIBS} libraw exiv2lib)
 
 add_test(NAME test_stills COMMAND test_stills)
 
@@ -315,6 +318,8 @@ add_executable(test_export test_export/main.cpp
   ../src/processing/BorderHandler.cpp
   ../src/stills/PhotoExportWorker.h
   ../src/stills/PhotoExportWorker.cpp
+  ../src/stills/VideoExportWorker.h
+  ../src/stills/VideoExportWorker.cpp
   ../src/stills/PhotoSequenceReader.h
   ../src/stills/PhotoSequenceReader.cpp
   ../src/raw/RawDecoder.h

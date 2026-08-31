@@ -12,6 +12,7 @@ se documentan aquí.
 | FFmpeg (gyan.dev full build) | LGPLv2.1+ **con libx264 → GPLv2/v3** | prebuilt | decodificación/codificación vídeo |
 | vid.stab | GPL-2.0-or-later | fuente (`third_party/`) | módulo opcional, fuera del MVP |
 | LibRaw | **LGPL-2.1** + opciones CDDL-1.0 | fuente (`third_party/libraw/`, estática) | decodificación RAW (CR2/CR3, DNG, NEF…) |
+| exiv2 | GPL-2.0-or-later | fuente (`third_party/exiv2/`, estática) | lectura EXIF de JPEG/PNG/TIFF |
 | SER Player | MIT | referencia (docs) | protocolo SER v3 |
 | opencv_contrib | Apache-2.0 | (no usado aún) | trackers CSRT/KCF (opcional futuro) |
 
@@ -29,6 +30,10 @@ se documentan aquí.
   `third_party/libraw/`, y (b) ofrecer la fuente de LibRaw tal y como exige la
   LGPL-2.1 sección 6 (se cumple porque se distribuye el árbol fuente completo
   en-tree). No se modifica LibRaw.
+- **exiv2 (GPL-2.0-or-later)**: al distribuir la app hay que (a) conservar
+  `COPYING` y `LICENSE.txt` junto a `third_party/exiv2/`, y (b) ofrecer la
+  fuente de exiv2 (se cumple porque se distribuye el árbol fuente completo
+  en-tree). El texto GPL-2.0 se incluye en `licenses/` del paquete.
 
 ## Textos de licencia
 

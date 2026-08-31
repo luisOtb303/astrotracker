@@ -5,7 +5,50 @@ Todas las modificaciones notables de AstroTracker se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
-## [Unreleased]
+## [0.4.0] - 2026-08-28
+
+### Added
+
+- **Controles de vídeo completos en la pestaña Vídeo** (espejo del modo Fotos):
+  botones **Calcular automáticamente**, **Ajustar fotograma**, **Vista previa**,
+  **Exportar vídeo...** y **Detener** en la barra de la propia pestaña (la
+  toolbar de estabilización se eliminó). "Calcular automáticamente" usa por
+  defecto el perfil **Disco**, así que funciona sin dibujar ROI; "Ajustar
+  fotograma" detecta el disco (masa + ajuste de arco) en el frame actual y
+  fija ROI + círculo semilla desde ahí; "Detener" cancela de verdad el análisis
+  o la exportación (`PipelineCancel` llega hasta el processado frame a frame).
+- **Centrado de objeto entendible en vídeo**: el visor izquierdo muestra ahora
+  etiquetas **"Original"** (con el **círculo de seguimiento** dibujado por
+  encima, verde = válido, discontinuo = perdido/predicho) y **"Centrado"** es
+  la salida estabilizada, con tooltips que explican qué se está viendo.
+  "Exportar vídeo" aclara que el objeto queda fijo y centrado en el visor
+  Centrado.
+- **EXIF real en fotos JPEG/PNG/TIFF**: se vende **exiv2 0.28.8** en
+  `third_party/exiv2/` (estático, mínimo: sin XMP/PNG/BMFF/vídeo/NLS ni
+  dependencias externas) y `ExifReader` se reescribe sobre él. El panel de
+  información ya muestra **cámara, lente, focal, apertura, obturador, ISO,
+  fecha y dimensiones** de verdad para JPG (antes Qt6 devolvía vacío con
+  formatos modernos). Los RAW siguen leyendo EXIF vía LibRaw.
+- **Atajos J/K/L progresivos** en vídeo (10s/30s) además de Espacio/S, zoom
+  con Ctrl++/Ctrl+-, y atajo **Ctrl+I** para el dock de información.
+
+### Changed
+
+- **UI reorganizada en docks redimensionables**: se elimina la barra lateral
+  (PanelManager y los paneles Input/Object/Tracking/Transform/Export). El
+  **dock de Seguimiento** y el de **Salida** se pueden mover/acoplar; la
+  **Información** pasa a ser un dock derecho. Menú **Ver** con alternar
+  Salida/Seguimiento/Información y **Restablecer paneles** (Ctrl+Shift+R);
+  el estado de docks y geometría persiste en `QSettings` (`UI/geometry`,
+  `UI/state`). Ventana por defecto 1280×800.
+- **Zoom y paneo en el visor de vídeo**: botón ajustar, porcentajes preseleccionados,
+  zoom por rueda y paneo arrastrando con el botón central.
+
+### Removed
+
+- Clases muertas tras el refactor: `ViewportWidget`, `PanelManager`,
+  `TransportBar`, `FilmstripWidget`, `ExportDialog`, `TrackingLostDialog` y
+  `styles.qrc`.
 
 ## [0.3.1] - 2026-08-27
 

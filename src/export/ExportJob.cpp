@@ -2,11 +2,12 @@
 
 ExportJob::Result ExportJob::run(const std::string& inPath, const std::string& outPath,
                                  const cv::Rect2f& roi, const PipelineSettings& settings,
-                                 const PipelineProgress& progress, int64_t startUs)
+                                 const PipelineProgress& progress, int64_t startUs,
+                                 const PipelineCancel& cancel)
 {
     Result res;
     PipelineStats stats;
-    if (!pipeline_.run(inPath, outPath, roi, settings, &stats, progress, startUs)) {
+    if (!pipeline_.run(inPath, outPath, roi, settings, &stats, progress, startUs, cancel)) {
         res.error = "no se pudo estabilizar el vídeo";
         return res;
     }

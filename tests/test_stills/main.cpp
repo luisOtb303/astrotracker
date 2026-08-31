@@ -1,4 +1,7 @@
 #include "stills/PhotoSequenceReader.h"
+#include "stills/ExifReader.h"
+
+#include <exiv2/exiv2.hpp>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -115,6 +118,39 @@ int main()
 
     PhotoSequenceReader r3;
     CHECK(!r3.openFolder((fs::temp_directory_path() / "no_existe_astrotracker_xyz").string()));
+
+    // EXIF real: se escribe metadatos con exiv2 en un JPEG y se leen con
+    // ExifReader (el mismo camino que usa PhotoSequenceReader::exifInfo).
+    {
+        using namespace Exiv2;
+        const fs::path exifJpg = dir / "exif_foto.jpg";
+        cv::imwrite(exifJpg.string(), makeFrame(320, 240, 200));
+
+        auto img = ImageFactory::open(exifJpg.string());
+        ExifData& ed = img->exifData();
+        ed["Exif.Image.Make"] = "AstroCam";
+        ed["Exif.Image.Model"] = "Test MK-1";
+        ed["Exif.Photo.LensModel"] = "RF 800mm f/11";
+        ed["Exif.Photo.FocalLength"] = Rational(800, 1);
+        ed["Exif.Photo.FNumber"] = Rational(11, 1);
+        ed["Exif.Photo.ExposureTime"] = Rational(1, 500);
+        ed["Exif.Photo.ISOSpeedRatings"] = 3200;
+        ed["Exif.Photo.DateTimeOriginal"] = "2026:03:15 22:47:00";
+        img->setExifData(ed);
+        img->writeMetadata();
+
+        const PhotoExifInfo ex = ExifReader::readExif(exifJpg.string());
+        CHECK(ex.camera == "AstroCam Test MK-1");
+        CHECK(ex.lens == "RF 800mm f/11");
+        CHECK(ex.hasFocal() && static_cast<int>(ex.focalMm + 0.5f) == 800);
+        CHECK(ex.hasAperture() && static_cast<int>(ex.aperture + 0.5f) == 11);
+        CHECK(ex.shutterSec > 0.0018f && ex.shutterSec < 0.0022f);
+        CHECK(ex.iso == 3200);
+        CHECK(!ex.date.empty());
+
+        // Una imagen sin metadatos no debe reportar datos fantasma.
+        CHECK(ExifReader::readExif((dir / "extra.bmp").string()).camera.empty());
+    }
 
     if (g_failures == 0) {
         std::cout << "test_stills: OK\n";

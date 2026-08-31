@@ -61,6 +61,9 @@ const LicenseEntry kLicenses[] = {
     {"vid.stab", "Referencia de estabilización; módulo opcional, fuera del MVP: "
                  "GNU GPL v2 o posterior.",
      ":/licenses/gpl-2.0.txt"},
+    {"exiv2", "Metadatos EXIF (stills), vinculación estática: GNU GPL v2 o "
+              "posterior.",
+     ":/licenses/gpl-2.0.txt"},
 };
 
 } // namespace

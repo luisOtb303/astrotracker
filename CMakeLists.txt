@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AstroTracker VERSION 0.3.1 LANGUAGES CXX)
+project(AstroTracker VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,22 +18,33 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil swscale)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED)
-find_package(PkgConfig)
-if(PkgConfig_FOUND)
-  pkg_check_modules(EXIV2 IMPORTED_TARGET exiv2)
-endif()
-if(NOT EXIV2_FOUND)
-  find_path(EXIV2_INCLUDE_DIR exiv2/version.hpp)
-  find_library(EXIV2_LIBRARY NAMES exiv2)
-  if(EXIV2_INCLUDE_DIR AND EXIV2_LIBRARY)
-    set(EXIV2_FOUND TRUE)
-    add_library(EXIV2::EXIV2 UNKNOWN IMPORTED)
-    set_target_properties(EXIV2::EXIV2 PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${EXIV2_INCLUDE_DIR}"
-      IMPORTED_LOCATION "${EXIV2_LIBRARY}")
-  endif()
-endif()
 add_subdirectory(third_party/libraw)
+
+# exiv2 vendido en-tree (lectura EXIF de JPEG/PNG/TIFF). Se compila como
+# librería estática con el mínimo de sub-sistemas (sin XMP/PNG/BMFF/vídeo/NLS)
+# para no arrastrar dependencias externas (expat, zlib, brotli, curl, inih).
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+set(EXIV2_ENABLE_XMP OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_EXTERNAL_XMP OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_PNG OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_NLS OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_LENSDATA OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_BMFF OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_BROTLI OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_VIDEO OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_WEBREADY OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_CURL OFF CACHE BOOL "" FORCE)
+set(EXIV2_ENABLE_INIH OFF CACHE BOOL "" FORCE)
+set(EXIV2_BUILD_EXIV2_COMMAND OFF CACHE BOOL "" FORCE)
+set(EXIV2_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(EXIV2_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(EXIV2_BUILD_FUZZ_TESTS OFF CACHE BOOL "" FORCE)
+set(EXIV2_BUILD_DOC OFF CACHE BOOL "" FORCE)
+set(EXIV2_TEAM_PACKAGING OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/exiv2)
+# Los cabeceras generadas (exv_conf.h, exiv2lib_export.h) se generan en
+# ${CMAKE_BINARY_DIR} (root del build); se propagan a los consumidores.
+target_include_directories(exiv2lib PUBLIC "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>")
 
 add_executable(astrotracker WIN32
   src/app/main.cpp
@@ -51,36 +62,10 @@ add_executable(astrotracker WIN32
   src/ui/AboutDialog.cpp
   src/ui/theme/ThemeManager.h
   src/ui/theme/ThemeManager.cpp
-  src/ui/viewport/TrackingOverlay.h
-  src/ui/viewport/TrackingOverlay.cpp
-  src/ui/viewport/ZoomController.h
-  src/ui/viewport/ZoomController.cpp
-  src/ui/viewport/ViewportWidget.h
-  src/ui/viewport/ViewportWidget.cpp
-  src/ui/panels/PanelManager.h
-  src/ui/panels/PanelManager.cpp
-  src/ui/panels/InputPanel.h
-  src/ui/panels/InputPanel.cpp
-  src/ui/panels/ObjectPanel.h
-  src/ui/panels/ObjectPanel.cpp
-  src/ui/panels/TrackingPanel.h
-  src/ui/panels/TrackingPanel.cpp
-  src/ui/panels/TransformPanel.h
-  src/ui/panels/TransformPanel.cpp
-  src/ui/panels/ExportPanel.h
-  src/ui/panels/ExportPanel.cpp
   src/ui/panels/InfoPanel.h
   src/ui/panels/InfoPanel.cpp
   src/ui/timeline/TimelineWidget.h
   src/ui/timeline/TimelineWidget.cpp
-  src/ui/timeline/TransportBar.h
-  src/ui/timeline/TransportBar.cpp
-  src/ui/timeline/FilmstripWidget.h
-  src/ui/timeline/FilmstripWidget.cpp
-  src/ui/dialogs/ExportDialog.h
-  src/ui/dialogs/ExportDialog.cpp
-  src/ui/dialogs/TrackingLostDialog.h
-  src/ui/dialogs/TrackingLostDialog.cpp
   src/ui/shortcuts/ShortcutManager.h
   src/ui/shortcuts/ShortcutManager.cpp
   resources/resources.qrc
@@ -151,6 +136,8 @@ add_executable(astrotracker WIN32
   src/stills/PhotoProject.cpp
   src/stills/ExifReader.h
   src/stills/ExifReader.cpp
+  src/stills/VideoExportWorker.h
+  src/stills/VideoExportWorker.cpp
   src/raw/RawDecoder.h
   src/raw/RawDecoder.cpp
   src/raw/RawExifReader.h
@@ -180,7 +167,7 @@ target_compile_definitions(astrotracker PRIVATE
   ASTROTRACKER_VERSION="${PROJECT_VERSION}"
   ASTROTRACKER_BUILD_TYPE="$<CONFIG>"
   ASTROTRACKER_GIT_REV="${ASTROTRACKER_GIT_REV}"
-  ASTROTRACKER_HAS_QT_EXIF)
+  ASTROTRACKER_HAS_EXIV2)
 
 target_link_libraries(astrotracker PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets
@@ -188,10 +175,8 @@ target_link_libraries(astrotracker PRIVATE
   libraw
   FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale
 )
-if(EXIV2_FOUND)
-  target_link_libraries(astrotracker PRIVATE EXIV2::EXIV2)
-  target_compile_definitions(astrotracker PRIVATE ASTROTRACKER_HAS_EXIV2)
-endif()
+target_link_libraries(astrotracker PRIVATE exiv2lib)
+target_compile_definitions(astrotracker PRIVATE ASTROTRACKER_HAS_EXIV2)
 
 # Deploy Qt runtime (DLLs) junto al ejecutable
 add_custom_command(TARGET astrotracker POST_BUILD

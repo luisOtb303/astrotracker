@@ -20,7 +20,8 @@ public:
                const cv::Rect2f& roi,
                const PipelineSettings& settings = PipelineSettings(),
                const PipelineProgress& progress = PipelineProgress(),
-               int64_t startUs = 0);
+               int64_t startUs = 0,
+               const PipelineCancel& cancel = PipelineCancel());
 
 private:
     Pipeline pipeline_;
