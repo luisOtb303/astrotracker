@@ -1369,6 +1369,26 @@ void PhotoPanel::onPhotoProcessed(int64_t index)
                            .arg(QString::fromStdString(reader_.fileName(index)))
                            .arg(index + 1)
                            .arg(reader_.count()));
+
+    // Mostrar en vivo la foto que se está procesando, sin tocar current_ (la
+    // navegación y el loader siguen en su sitio; al terminar se restaura la
+    // foto actual). Izquierdo: original. Derecho: centrada si hay resultado;
+    // si no, directa (va mostrando el avance del cálculo).
+    cv::Mat frame;
+    if (reader_.readAt(index, frame, displayMaxDim_) && !frame.empty()) {
+        view_->setFrame(frame);
+        if (analyzed_ && index < static_cast<int64_t>(tracks_.size())) {
+            const DiscTrack& t = tracks_[static_cast<size_t>(index)];
+            if (t.radius > 0.f) {
+                resultView_->setFrame(centeredFrame(frame, t));
+                resultView_->setCircle(QPointF(frame.cols / 2.0, frame.rows / 2.0),
+                                       t.radius, t.predicted);
+                return;
+            }
+        }
+        resultView_->setFrame(frame);
+        resultView_->clearCircle();
+    }
 }
 
 void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)

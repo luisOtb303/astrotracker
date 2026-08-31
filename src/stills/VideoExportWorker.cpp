@@ -142,6 +142,12 @@ void VideoExportWorker::run()
 
         emit frameProcessed(frameIndex);
 
+        AppLog::info(QStringLiteral("fotograma %1/%2%3")
+                         .arg(frameIndex + 1)
+                         .arg(n)
+                         .arg(offsets_.empty() ? QStringLiteral(" → directo")
+                                               : QStringLiteral(" → centrando")));
+
         cv::Mat work = toBgr8(frame.image);
         cv::Mat out;
         if (!offsets_.empty() && frameIndex < static_cast<int64_t>(offsets_.size())) {

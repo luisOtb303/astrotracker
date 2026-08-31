@@ -70,6 +70,7 @@ private slots:
                            int frames, int valid, double meanConfidence);
     void onExportFinished(bool ok, const QString& error, int frames, int valid);
     void onVideoExportFinished(bool ok, const QString& error, int frames);
+    void onVideoExportFrame(int64_t index);
     void onWorkerFinished();
     void onLogMessage(int level, const QString& text);
 
@@ -187,6 +188,9 @@ private:
     PipelineWorker* worker_ = nullptr;
     VideoExportWorker* videoExportWorker_ = nullptr;
     std::vector<cv::Point2f> offsets_;
+    // Último índice mostrado en el visor durante la exportación de vídeo, para
+    // avanzar el lector de forma secuencial (sin re-buscar cada fotograma).
+    int64_t lastShownExportIndex_ = -1;
     bool previewEnabled_ = false;
     int64_t startIndex_ = 0;
     int64_t startUs_ = 0;

@@ -1077,16 +1077,48 @@ void MainWindow::runExportDialog(bool toVideo)
     videoExportWorker_ = new VideoExportWorker(inPath_, exportOffsets, st, this);
     connect(videoExportWorker_, &VideoExportWorker::progress, this,
             &MainWindow::onWorkerProgress);
+    connect(videoExportWorker_, &VideoExportWorker::frameProcessed, this,
+            &MainWindow::onVideoExportFrame);
     connect(videoExportWorker_, &VideoExportWorker::finished, this,
             &MainWindow::onVideoExportFinished);
     connect(videoExportWorker_, &QThread::finished, videoExportWorker_, &QObject::deleteLater);
 
+    lastShownExportIndex_ = -1;
+    reader_->seekToUs(startUs_);
     setBusy(true);
     progressBar_->setRange(0, static_cast<int>(reader_->frameCount()));
     progressBar_->setValue(0);
     progressBar_->setVisible(true);
     statusBar()->showMessage(tr("Exportando secuencia..."));
     videoExportWorker_->start();
+}
+
+void MainWindow::onVideoExportFrame(int64_t index)
+{
+    // El worker del export usa su propio lector; aquí se avanza el lector de la
+    // UI (libre durante el export) para mostrar en el visor "Centrado" el frame
+    // tal y como se está escribiendo. Solo lectura: no altera el resultado.
+    if (!reader_ || index < 0)
+        return;
+
+    Frame frame;
+    if (index == lastShownExportIndex_ + 1) {
+        // Avance secuencial normal: no hace falta re-buscar.
+        if (!reader_->readNext(frame))
+            return;
+    } else {
+        // Salto (p. ej. cambio de configuración): re-buscar el índice.
+        const double fps = reader_->fps();
+        if (fps <= 0.0)
+            return;
+        reader_->seekToUs(static_cast<int64_t>(index * 1e6 / fps));
+        if (!reader_->readNext(frame))
+            return;
+        if (frame.index != index)
+            return;
+    }
+    lastShownExportIndex_ = index;
+    presentFrame(frame);
 }
 
 void MainWindow::onVideoExportFinished(bool ok, const QString& error, int frames)
