@@ -37,6 +37,7 @@
 #include <QSettings>
 #include <QSlider>
 #include <QStatusBar>
+#include <QStyle>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -129,6 +130,7 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     playAction_ = tb->addAction(tr("Reproducir TL"));
     playAction_->setCheckable(true);
     playAction_->setEnabled(false);
+    playAction_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
     playAction_->setToolTip(tr("Reproducir la secuencia en bucle (vista previa "
                                "rápida del timelapse usando las miniaturas de caché)"));
     connect(playAction_, &QAction::toggled, this, &PhotoPanel::togglePlayback);
@@ -141,6 +143,7 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     connect(fpsCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (playbackTimer_ && playbackTimer_->isActive())
             playbackTimer_->setInterval(1000 / fpsCombo_->currentData().toInt());
+        emit photoPositionChanged(current_);
     });
     tb->addWidget(fpsCombo_);
 
@@ -509,6 +512,19 @@ void PhotoPanel::onItemActivated(QListWidgetItem* item)
     updateNavUi();
 }
 
+void PhotoPanel::showPhoto(int64_t index)
+{
+    if (!reader_.isOpen() || index < 0 || index >= reader_.count())
+        return;
+    if (playbackTimer_ && playbackTimer_->isActive())
+        playAction_->setChecked(false); // parar el preview al navegar
+    if (index == current_)
+        return;
+    current_ = index;
+    showCurrent();
+    updateNavUi();
+}
+
 void PhotoPanel::onSliderChanged(int value)
 {
     if (!reader_.isOpen() || value == static_cast<int>(current_))
@@ -564,10 +580,12 @@ void PhotoPanel::togglePlayback(bool checked)
         // El preview rota por las imágenes de caché (rápido); se bloquea la
         // navegación mientras reproduce para no desincronizar el bucle.
         playAction_->setText(tr("Pausa"));
+        playAction_->setIcon(style()->standardIcon(QStyle::SP_MediaPause));
         playbackTimer_->setInterval(1000 / fpsCombo_->currentData().toInt());
         playbackTimer_->start();
     } else {
         playAction_->setText(tr("Reproducir TL"));
+        playAction_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
         playbackTimer_->stop();
         // Al pausar se restaura la vista normal a resolución completa.
         showCurrent();
@@ -744,6 +762,7 @@ void PhotoPanel::updateNavUi()
     }
     infoLabel_->setText(info);
     emit photoStatusChanged(photoStatusText());
+    emit photoPositionChanged(current_);
 
     // Vista previa del timelapse: solo con 2+ fotos y sin trabajo en curso.
     const bool canPlay = reader_.isOpen() && reader_.count() >= 2 && !isBusy();
@@ -1173,6 +1192,13 @@ void PhotoPanel::updateTrackingUi()
 bool PhotoPanel::isBusy() const
 {
     return worker_ != nullptr || exportWorker_ != nullptr;
+}
+
+double PhotoPanel::playbackFps() const
+{
+    if (fpsCombo_)
+        return fpsCombo_->currentData().toDouble();
+    return 5.0;
 }
 
 void PhotoPanel::setTrackingProfile(ObjectProfile profile)

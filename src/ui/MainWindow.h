@@ -96,6 +96,7 @@ private:
     void updateTransportUi();
     void updateStabilizationUi();
     void updatePanelMode();
+    void updateTimelineForPhotos(int64_t index = -1);
     void restoreDocks();
     QString formatTime(int64_t us) const;
     PipelineSettings currentSettings() const;

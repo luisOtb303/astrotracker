@@ -38,6 +38,9 @@ public:
     bool isOpen() const { return reader_.isOpen(); }
     int64_t currentIndex() const { return current_; }
     bool isBusy() const;
+    // Tamaño de la secuencia y fps del selector del preview (para el timeline).
+    int64_t count() const { return reader_.count(); }
+    double playbackFps() const;
 
     // Estado persistible de la secuencia (para el proyecto .atracker).
     PhotoProjectPhotos collectState() const;
@@ -45,6 +48,9 @@ public:
     bool applyState(const PhotoProjectPhotos& data, QString* error = nullptr);
     // Cierra la secuencia y limpia todos los resultados.
     void clearSession();
+
+    // Muestra una foto concreta (navegación desde el timeline externo).
+    void showPhoto(int64_t index);
 
     // Perfil de seguimiento del proyecto y override de método por foto.
     TrackingProfile trackingProfile() const { return trackingProfile_; }
@@ -74,6 +80,8 @@ signals:
     void photoStatusChanged(const QString& statusText);
     // Datos del fichero + EXIF de la foto actual (selección/decodificación).
     void photoMetaChanged(const PhotoFileInfo& file, const PhotoExifInfo& exif);
+    // Posición actual de la secuencia (navegación o preview) para el timeline.
+    void photoPositionChanged(int64_t index);
 
 private slots:
     void onItemActivated(QListWidgetItem* item);

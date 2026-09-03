@@ -81,6 +81,11 @@ MainWindow::MainWindow(QWidget* parent)
                            .arg(QString::fromStdString(file.type)));
                 infoPanel_->setFileAndExif(file, exif);
             });
+    connect(photosPanel_, &PhotoPanel::photoPositionChanged, this,
+            [this](int64_t index) {
+                if (tabs_->currentIndex() == 1)
+                    updateTimelineForPhotos(index);
+            });
     connect(trackerCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int) { if (reader_) markProjectModified(); });
     connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -268,10 +273,18 @@ void MainWindow::setupUi()
     timeline_ = new TimelineWidget(this);
     centerLayout->addWidget(timeline_);
 
-    connect(timeline_, &TimelineWidget::valueChanged, this, [this](int ms) {
-        if (!reader_ || ms == currentUs_ / 1000)
+    connect(timeline_, &TimelineWidget::valueChanged, this, [this](int val) {
+        // En el modo Fotos el timeline navega por fotos (preview del TL); en
+        // el modo Vídeo sigue haciendo seek por milisegundos.
+        if (tabs_->currentIndex() == 1) {
+            if (photosPanel_ && photosPanel_->isOpen() &&
+                static_cast<int64_t>(val) != photosPanel_->currentIndex())
+                photosPanel_->showPhoto(val);
             return;
-        reader_->seekToUs(static_cast<int64_t>(ms) * 1000);
+        }
+        if (!reader_ || val == currentUs_ / 1000)
+            return;
+        reader_->seekToUs(static_cast<int64_t>(val) * 1000);
         showCurrentFrame();
     });
 
@@ -1399,6 +1412,35 @@ void MainWindow::updatePanelMode()
         if (!onPhotoTab || !photosPanel_->isOpen())
             infoPanel_->clearFileInfo();
     }
+
+    // Timeline inferior: en el modo Fotos lo usa el preview del timelapse
+    // (frame 1/N y el tiempo actual/total según el fps del preview).
+    if (onPhotoTab)
+        updateTimelineForPhotos();
+}
+
+void MainWindow::updateTimelineForPhotos(int64_t index)
+{
+    if (!timeline_)
+        return;
+    if (!photosPanel_ || !photosPanel_->isOpen() || photosPanel_->count() < 1) {
+        timeline_->setEnabled(false);
+        return;
+    }
+    if (index < 0)
+        index = photosPanel_->currentIndex();
+    const int64_t n = photosPanel_->count();
+    timeline_->setRange(0, static_cast<int>(n - 1));
+    timeline_->setEnabled(true);
+    timeline_->setValue(static_cast<int>(index));
+    timeline_->setFrameLabel(static_cast<int>(index + 1), static_cast<int>(n));
+    const double fps = photosPanel_->playbackFps();
+    const int64_t currentUs =
+        fps > 0.0 ? static_cast<int64_t>(static_cast<double>(index) * 1000000.0 / fps) : 0;
+    const int64_t totalUs =
+        fps > 0.0 ? static_cast<int64_t>(static_cast<double>(n) * 1000000.0 / fps) : 0;
+    timeline_->setTimeLabel(QStringLiteral("%1 / %2")
+                                .arg(formatTime(currentUs), formatTime(totalUs)));
 }
 
 PipelineSettings MainWindow::currentSettings() const

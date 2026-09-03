@@ -5,7 +5,7 @@ Todas las modificaciones notables de AstroTracker se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
-## [0.4.0] - 2026-08-28
+## [0.4.0] - 2026-09-03
 
 ### Added
 
@@ -44,7 +44,17 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   Centrado) reutilizando las imágenes de la **caché `_astrotracker_cache`**
   (JPG reducidos), por lo que es fluido sin re-decodificar los CR2. Bucle al
   final; se detiene si hay cálculo/exportación en curso. La pausa restaura la
-  foto actual a resolución completa.
+  foto actual a resolución completa. El botón lleva **icono de play** (pausa
+  mientras reproduce).
+- **Timeline inferior reutilizado en el modo Fotos para el preview del TL**:
+  el widget de línea de tiempo (antes solo para vídeo) pasa a reflejar la
+  secuencia de fotos cuando estás en la pestaña Fotos con 2+ imágenes:
+  muestra el contador **"Frame: 1 / N"**, la duración **actual / total** del
+  timelapse según el **fps del selector de preview** (p. ej.
+  `00:00:01.000 / 00:00:04.000` a 5 fps) y **navega por fotos al arrastrar**.
+  Se actualiza al cambiar de foto y durante la reproducción en bucle, y se
+  recalcula al cambiar el fps. El modo Vídeo sigue usando el timeline en
+  milisegundos como siempre.
 
 ### Changed
 
