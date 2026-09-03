@@ -163,8 +163,10 @@ configure_file(cmake/exiv2.pc.in exiv2.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/exiv2.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 # ******************************************************************************
-# Man page
-install( FILES ${PROJECT_SOURCE_DIR}/man/man1/exiv2.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 )
+# Man page (opcional: el vendoring mínimo no incluye la documentación)
+if(EXISTS ${PROJECT_SOURCE_DIR}/man/man1/exiv2.1)
+    install( FILES ${PROJECT_SOURCE_DIR}/man/man1/exiv2.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 )
+endif()
 
 include(cmake/printSummary.cmake)
 
