@@ -31,8 +31,41 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   formatos modernos). Los RAW siguen leyendo EXIF vía LibRaw.
 - **Atajos J/K/L progresivos** en vídeo (10s/30s) además de Espacio/S, zoom
   con Ctrl++/Ctrl+-, y atajo **Ctrl+I** para el dock de información.
+- **Panel de información unificado "Archivo y metadatos"** (Opción B): una sola
+  sección que en el modo **Fotos** muestra nombre, ruta, tamaño, tipo, fecha del
+  fichero, dimensión y el **EXIF** (cámara, objetivo, focal, apertura,
+  obturador, ISO, fecha de disparo); en el modo **Vídeo** muestra los datos del
+  fichero y la posición de **frame X/Y**. Las **"Frame Info"** quedan solo en
+  vídeo (en fotos se ocultan, estaban vacías). Todo el texto del panel es
+  **seleccionable y copiable** (Ctrl+C), y el panel va en un `QScrollArea`.
+- **Vista previa del timelapse en el modo Fotos** (reproducción en bucle):
+  botón **Reproducir TL** + **selector de fps** (1/2/5/10/15/20/25/30/60) en la
+  barra de Fotos. Reproduce la secuencia en **ambos visores** (Original y
+  Centrado) reutilizando las imágenes de la **caché `_astrotracker_cache`**
+  (JPG reducidos), por lo que es fluido sin re-decodificar los CR2. Bucle al
+  final; se detiene si hay cálculo/exportación en curso. La pausa restaura la
+  foto actual a resolución completa.
 
 ### Changed
+
+- **Log "Salida" legible en tema oscuro**: los colores del dock de salida se
+  eligen según el tema del sistema (claro u oscuro), de modo que en el modo
+  *dark* la fuente se ve clara (información casi blanca, avisos ámbar, errores
+  rojo claro).
+
+### Fixed
+
+- **El EXIF y la info de archivo no se actualizaban en Fotos** al navegar: la
+  señal solo se emitía en `showCurrentSync()` (ruta sin loader); al cargar por
+  el `PhotoFrameLoader` (siempre tras abrir una secuencia) nunca se re-emitía.
+  Ahora `PhotoPanel` la emite tanto en `showCurrentSync()` como en
+  `onFrameReady()`, y además `showCurrent()` la emite siempre al cambiar de foto
+  (el loader no re-entrega los índices ya en caché).
+- **La sección "Archivo y metadatos" no aparecía** al abrir fotos: `updatePanelMode`
+  se ejecutaba al cambiar de pestaña (antes de abrir el diálogo, sin secuencia
+  abierta) y no volvía a mostrar la sección tras cargar. Ahora se re-evalúa al
+  emitir `PhotoPanel::statusMessage` (p. ej. "N fotos cargadas"), cuando la
+  secuencia ya está abierta.
 
 - **UI reorganizada en docks redimensionables**: se elimina la barra lateral
   (PanelManager y los paneles Input/Object/Tracking/Transform/Export). El

@@ -1,98 +1,119 @@
 #include "ui/panels/InfoPanel.h"
 
-#include <QVBoxLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QScrollArea>
+#include <QStringList>
+#include <QVBoxLayout>
 #include <cmath>
+
+namespace {
+QLabel* makeSelectable(QLabel* label)
+{
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse |
+                                   Qt::TextSelectableByKeyboard);
+    label->setTextFormat(Qt::PlainText);
+    label->setWordWrap(true);
+    return label;
+}
+} // namespace
 
 InfoPanel::InfoPanel(QWidget* parent)
     : QWidget(parent)
 {
-    auto* mainLayout = new QVBoxLayout(this);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    outer->addWidget(scroll);
+
+    auto* content = new QWidget(scroll);
+    auto* mainLayout = new QVBoxLayout(content);
     mainLayout->setContentsMargins(4, 4, 4, 4);
     mainLayout->setSpacing(6);
 
     // --- Tracking Stats ---
-    trackingSection_ = new QGroupBox(tr("Tracking Stats"), this);
+    trackingSection_ = new QGroupBox(tr("Tracking Stats"), content);
     auto* tlay = new QVBoxLayout(trackingSection_);
     tlay->setContentsMargins(8, 16, 8, 8);
     tlay->setSpacing(4);
 
-    validCount_ = new QLabel("--", this);
+    validCount_ = makeSelectable(new QLabel("--", content));
     validCount_->setStyleSheet("color: #2e8b57;");
     tlay->addWidget(validCount_);
 
-    predictedCount_ = new QLabel("--", this);
+    predictedCount_ = makeSelectable(new QLabel("--", content));
     predictedCount_->setStyleSheet("color: #ffa500;");
     tlay->addWidget(predictedCount_);
 
-    lostCount_ = new QLabel("--", this);
+    lostCount_ = makeSelectable(new QLabel("--", content));
     lostCount_->setStyleSheet("color: #c04040;");
     tlay->addWidget(lostCount_);
 
-    trackingPercent_ = new QLabel("--", this);
+    trackingPercent_ = makeSelectable(new QLabel("--", content));
     tlay->addWidget(trackingPercent_);
 
     mainLayout->addWidget(trackingSection_);
 
     // --- Frame Info ---
-    frameSection_ = new QGroupBox(tr("Frame Info"), this);
+    frameSection_ = new QGroupBox(tr("Frame Info"), content);
     auto* flay = new QVBoxLayout(frameSection_);
     flay->setContentsMargins(8, 16, 8, 8);
     flay->setSpacing(4);
 
-    frameIndexLabel_ = new QLabel("--", this);
+    frameIndexLabel_ = makeSelectable(new QLabel("--", content));
     flay->addWidget(frameIndexLabel_);
 
-    timeLabel_ = new QLabel("--", this);
+    timeLabel_ = makeSelectable(new QLabel("--", content));
     flay->addWidget(timeLabel_);
 
-    methodLabel_ = new QLabel("--", this);
+    methodLabel_ = makeSelectable(new QLabel("--", content));
     flay->addWidget(methodLabel_);
 
-    confidenceLabel_ = new QLabel("--", this);
+    confidenceLabel_ = makeSelectable(new QLabel("--", content));
     flay->addWidget(confidenceLabel_);
 
-    offsetLabel_ = new QLabel("--", this);
+    offsetLabel_ = makeSelectable(new QLabel("--", content));
     flay->addWidget(offsetLabel_);
 
-    statusLabel_ = new QLabel("--", this);
+    statusLabel_ = makeSelectable(new QLabel("--", content));
     flay->addWidget(statusLabel_);
 
     mainLayout->addWidget(frameSection_);
 
-    // --- EXIF Info ---
-    exifSection_ = new QGroupBox(tr("EXIF Info"), this);
-    auto* elay = new QVBoxLayout(exifSection_);
+    // --- Archivo y metadatos (fotos: fichero + EXIF; vídeo: fichero + frame) ---
+    fileSection_ = new QGroupBox(tr("Archivo y metadatos"), content);
+    auto* elay = new QVBoxLayout(fileSection_);
     elay->setContentsMargins(8, 16, 8, 8);
     elay->setSpacing(4);
 
-    exifCamera_ = new QLabel("--", this);
-    elay->addWidget(exifCamera_);
+    fileValueName_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValueName_);
 
-    exifLens_ = new QLabel("--", this);
-    elay->addWidget(exifLens_);
+    fileValuePath_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValuePath_);
 
-    exifFocal_ = new QLabel("--", this);
-    elay->addWidget(exifFocal_);
+    fileValueSize_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValueSize_);
 
-    exifAperture_ = new QLabel("--", this);
-    elay->addWidget(exifAperture_);
+    fileValueType_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValueType_);
 
-    exifShutter_ = new QLabel("--", this);
-    elay->addWidget(exifShutter_);
+    fileValueDate_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValueDate_);
 
-    exifIso_ = new QLabel("--", this);
-    elay->addWidget(exifIso_);
+    fileValueDimension_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValueDimension_);
 
-    exifDate_ = new QLabel("--", this);
-    elay->addWidget(exifDate_);
+    fileValueExtra_ = makeSelectable(new QLabel("--", content));
+    elay->addWidget(fileValueExtra_);
 
-    exifDimensions_ = new QLabel("--", this);
-    elay->addWidget(exifDimensions_);
-
-    mainLayout->addWidget(exifSection_);
+    mainLayout->addWidget(fileSection_);
     mainLayout->addStretch(1);
+
+    scroll->setWidget(content);
 }
 
 void InfoPanel::setTrackingStats(int valid, int predicted, int lost)
@@ -111,11 +132,11 @@ void InfoPanel::setTrackingStats(int valid, int predicted, int lost)
 }
 
 void InfoPanel::setFrameInfo(int frameIndex, int totalFrames,
-                              const QString& time,
-                              const QString& method,
-                              float confidence,
-                              float offsetX, float offsetY,
-                              const QString& status)
+                             const QString& time,
+                             const QString& method,
+                             float confidence,
+                             float offsetX, float offsetY,
+                             const QString& status)
 {
     frameIndexLabel_->setText(tr("#%1 / %2").arg(frameIndex).arg(totalFrames));
     timeLabel_->setText(time);
@@ -127,48 +148,82 @@ void InfoPanel::setFrameInfo(int frameIndex, int totalFrames,
     statusLabel_->setText(tr("Status: %1").arg(status));
 }
 
-void InfoPanel::setExifInfo(const PhotoExifInfo& exif)
+QString InfoPanel::formatSize(qint64 bytes)
 {
-    exifCamera_->setText(exif.hasCamera()
-                             ? QString::fromStdString(exif.camera)
-                             : "--");
-    exifLens_->setText(exif.hasLens()
-                           ? QString::fromStdString(exif.lens)
-                           : "--");
-    exifFocal_->setText(exif.hasFocal()
-                            ? QString::fromStdString(exif.focalString())
-                            : "--");
-    exifAperture_->setText(exif.hasAperture()
-                               ? QString::fromStdString(exif.apertureString())
-                               : "--");
-    exifShutter_->setText(exif.hasShutter()
-                               ? QString::fromStdString(exif.shutterString())
-                               : "--");
-    exifIso_->setText(exif.hasIso()
-                          ? tr("ISO %1").arg(exif.iso)
-                          : "--");
-    exifDate_->setText(exif.hasDate()
-                           ? QString::fromStdString(exif.date)
-                           : "--");
-    if (exif.width > 0 && exif.height > 0)
-        exifDimensions_->setText(tr("%1x%2").arg(exif.width).arg(exif.height));
-    else
-        exifDimensions_->setText("--");
+    const double kb = 1024.0;
+    if (bytes >= kb * kb * kb)
+        return tr("%1 GB").arg(bytes / (kb * kb * kb), 0, 'f', 2);
+    if (bytes >= kb * kb)
+        return tr("%1 MB").arg(bytes / (kb * kb), 0, 'f', 2);
+    if (bytes >= kb)
+        return tr("%1 KB").arg(bytes / kb, 0, 'f', 1);
+    return tr("%1 B").arg(bytes);
+}
 
-    exifSection_->setVisible(!exif.isEmpty());
+void InfoPanel::setFileAndExif(const PhotoFileInfo& file, const PhotoExifInfo& exif)
+{
+    fileValueName_->setText(tr("Nombre: %1")
+                                .arg(QString::fromStdString(file.name)));
+    fileValuePath_->setText(tr("Ruta: %1")
+                                .arg(QString::fromStdString(file.path)));
+    fileValueSize_->setText(tr("Tamaño: %1").arg(formatSize(file.sizeBytes)));
+    fileValueType_->setText(tr("Tipo: %1")
+                                .arg(QString::fromStdString(file.type)));
+    fileValueDate_->setText(tr("Fecha fichero: %1")
+                                .arg(QString::fromStdString(file.modifyDate)));
+    if (file.width > 0 && file.height > 0)
+        fileValueDimension_->setText(tr("Dimensión: %1 x %2")
+                                         .arg(file.width)
+                                         .arg(file.height));
+    else
+        fileValueDimension_->setText(tr("Dimensión: --"));
+
+    QStringList lines;
+    if (exif.hasCamera())
+        lines << tr("Cámara: %1").arg(QString::fromStdString(exif.camera));
+    if (exif.hasLens())
+        lines << tr("Objetivo: %1").arg(QString::fromStdString(exif.lens));
+    if (exif.hasFocal())
+        lines << tr("Focal: %1").arg(QString::fromStdString(exif.focalString()));
+    if (exif.hasAperture())
+        lines << tr("Apertura: %1").arg(QString::fromStdString(exif.apertureString()));
+    if (exif.hasShutter())
+        lines << tr("Obturación: %1").arg(QString::fromStdString(exif.shutterString()));
+    if (exif.hasIso())
+        lines << tr("ISO: %1").arg(exif.iso);
+    if (exif.hasDate())
+        lines << tr("Fecha disparo: %1").arg(QString::fromStdString(exif.date));
+    fileValueExtra_->setText(lines.isEmpty() ? tr("EXIF: sin datos")
+                                             : lines.join('\n'));
+}
+
+void InfoPanel::setVideoFileInfo(const QString& name, const QString& path,
+                                 qint64 sizeBytes, const QString& modifyDate,
+                                 int frameIndex, int totalFrames)
+{
+    fileValueName_->setText(tr("Nombre: %1").arg(name));
+    fileValuePath_->setText(tr("Ruta: %1").arg(path));
+    fileValueSize_->setText(tr("Tamaño: %1").arg(formatSize(sizeBytes)));
+    fileValueType_->setText(tr("Tipo: Vídeo"));
+    fileValueDate_->setText(tr("Fecha fichero: %1").arg(modifyDate));
+    fileValueDimension_->setText(tr("Frame: %1 / %2").arg(frameIndex + 1).arg(totalFrames));
+    fileValueExtra_->setText(tr("Posición: %1 / %2").arg(frameIndex + 1).arg(totalFrames));
 }
 
 void InfoPanel::clearExifInfo()
 {
-    exifCamera_->setText("--");
-    exifLens_->setText("--");
-    exifFocal_->setText("--");
-    exifAperture_->setText("--");
-    exifShutter_->setText("--");
-    exifIso_->setText("--");
-    exifDate_->setText("--");
-    exifDimensions_->setText("--");
-    exifSection_->setVisible(false);
+    fileValueExtra_->setText("--");
+}
+
+void InfoPanel::clearFileInfo()
+{
+    clearExifInfo();
+    fileValueName_->setText(tr("Nombre: --"));
+    fileValuePath_->setText(tr("Ruta: --"));
+    fileValueSize_->setText(tr("Tamaño: --"));
+    fileValueType_->setText(tr("Tipo: --"));
+    fileValueDate_->setText(tr("Fecha fichero: --"));
+    fileValueDimension_->setText(tr("--"));
 }
 
 void InfoPanel::setMaterialInfo(const QString& info)
@@ -186,7 +241,15 @@ void InfoPanel::setFrameInfoVisible(bool visible)
     frameSection_->setVisible(visible);
 }
 
+void InfoPanel::setFileInfoVisible(bool visible)
+{
+    fileSection_->setVisible(visible);
+}
+
 void InfoPanel::setExifVisible(bool visible)
 {
-    exifSection_->setVisible(visible);
+    // Obsoleto: la sección única "Archivo y metadatos" engloba el EXIF. Se
+    // mantiene la firma para no romper llamadas; la visibilidad la gestiona
+    // setFileInfoVisible en el modo Fotos.
+    Q_UNUSED(visible);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/CircleF.h"
+#include "common/PhotoFileInfo.h"
 #include "motion/TrackStatus.h"
 #include "stills/PhotoProject.h"
 #include "stills/PhotoSequenceReader.h"
@@ -16,6 +17,7 @@ class QLabel;
 class QListWidget;
 class QListWidgetItem;
 class QSlider;
+class QTimer;
 class VideoView;
 class PhotoTrackWorker;
 class PhotoExportWorker;
@@ -70,8 +72,8 @@ signals:
     void profileChanged(ObjectProfile profile);
     // Texto de estado de la foto actual ("arco · 82% · válida") para el dock.
     void photoStatusChanged(const QString& statusText);
-    // EXIF de la foto actual cambió (cuando se selecciona otra foto).
-    void photoExifChanged(const PhotoExifInfo& exif);
+    // Datos del fichero + EXIF de la foto actual (selección/decodificación).
+    void photoMetaChanged(const PhotoFileInfo& file, const PhotoExifInfo& exif);
 
 private slots:
     void onItemActivated(QListWidgetItem* item);
@@ -79,6 +81,8 @@ private slots:
     void showPrev();
     void showNext();
     void showCurrent();
+    void togglePlayback(bool checked);
+    void onPlaybackTick();
     void onRoiSelected(const QRect& rect);
     void onCircleSelected(const QPointF& center, double radius);
     void onFitDisc();
@@ -115,6 +119,7 @@ private:
     void showCurrentSync();
     void ensureLoader();
     void updateViewerCircles(const cv::Mat& frame);
+    void emitFileInfo(int64_t index);
 
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
@@ -138,6 +143,11 @@ private:
     QAction* lockAction_ = nullptr;
     QAction* resetAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
+    // Reproducción del timelapse (preview con selector de fps, bucle).
+    QAction* playAction_ = nullptr;
+    QComboBox* fpsCombo_ = nullptr;
+    QTimer* playbackTimer_ = nullptr;
+    bool playbackRunning_ = false;
 
     bool drawCircleMode_ = true;
     bool trackingBusy_ = false;

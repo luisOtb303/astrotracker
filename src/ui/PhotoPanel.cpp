@@ -1,6 +1,7 @@
 #include "ui/PhotoPanel.h"
 
 #include "common/AppLog.h"
+#include "ui/DebugDep.h"
 #include "processing/BorderHandler.h"
 #include "stills/PhotoExportWorker.h"
 #include "stills/PhotoFrameLoader.h"
@@ -36,6 +37,7 @@
 #include <QSettings>
 #include <QSlider>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <opencv2/imgproc.hpp>
@@ -120,6 +122,32 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     tb->addSeparator();
     prevAction_ = tb->addAction(tr("Anterior"), this, &PhotoPanel::showPrev);
     nextAction_ = tb->addAction(tr("Siguiente"), this, &PhotoPanel::showNext);
+    tb->addSeparator();
+
+    // Vista previa del timelapse: reproducción en bucle sobre las imágenes de
+    // caché (_astrotracker_cache) de los RAW, con selector de fps.
+    playAction_ = tb->addAction(tr("Reproducir TL"));
+    playAction_->setCheckable(true);
+    playAction_->setEnabled(false);
+    playAction_->setToolTip(tr("Reproducir la secuencia en bucle (vista previa "
+                               "rápida del timelapse usando las miniaturas de caché)"));
+    connect(playAction_, &QAction::toggled, this, &PhotoPanel::togglePlayback);
+    fpsCombo_ = new QComboBox(this);
+    fpsCombo_->setEnabled(false);
+    fpsCombo_->setToolTip(tr("Fotogramas por segundo de la vista previa"));
+    for (const int f : {1, 2, 5, 10, 15, 20, 25, 30, 60})
+        fpsCombo_->addItem(tr("%1 fps").arg(f), f);
+    fpsCombo_->setCurrentIndex(2); // 5 fps por defecto
+    connect(fpsCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
+        if (playbackTimer_ && playbackTimer_->isActive())
+            playbackTimer_->setInterval(1000 / fpsCombo_->currentData().toInt());
+    });
+    tb->addWidget(fpsCombo_);
+
+    playbackTimer_ = new QTimer(this);
+    playbackTimer_->setTimerType(Qt::PreciseTimer);
+    connect(playbackTimer_, &QTimer::timeout, this, &PhotoPanel::onPlaybackTick);
+
     tb->addSeparator();
     analyzeAction_ = tb->addAction(tr("Calcular automáticamente"));
     analyzeAction_->setEnabled(false);
@@ -521,13 +549,86 @@ void PhotoPanel::showCurrentSync()
     view_->setFrame(frame);
     updateViewerCircles(frame);
 
-    emit photoExifChanged(reader_.exifInfo(current_));
+    emitFileInfo(current_);
+}
+
+void PhotoPanel::togglePlayback(bool checked)
+{
+    if (checked && (!reader_.isOpen() || reader_.count() < 2 || isBusy())) {
+        playAction_->setChecked(false);
+        return;
+    }
+    if (checked) {
+        if (reader_.count() < 2)
+            return;
+        // El preview rota por las imágenes de caché (rápido); se bloquea la
+        // navegación mientras reproduce para no desincronizar el bucle.
+        playAction_->setText(tr("Pausa"));
+        playbackTimer_->setInterval(1000 / fpsCombo_->currentData().toInt());
+        playbackTimer_->start();
+    } else {
+        playAction_->setText(tr("Reproducir TL"));
+        playbackTimer_->stop();
+        // Al pausar se restaura la vista normal a resolución completa.
+        showCurrent();
+    }
+}
+
+void PhotoPanel::onPlaybackTick()
+{
+    if (!reader_.isOpen() || reader_.count() == 0)
+        return;
+    if (reader_.count() < 2) {
+        togglePlayback(false);
+        return;
+    }
+    int64_t next = current_ + 1;
+    if (next >= reader_.count())
+        next = 0; // bucle
+    current_ = next;
+
+    // readAt con displayMaxDim_ usa la caché de análisis (_astrotracker_cache)
+    // para los RAW: leer y centrar es barato, idóneo para el preview en bucle.
+    cv::Mat frame;
+    if (reader_.readAt(current_, frame, displayMaxDim_) && !frame.empty()) {
+        view_->setLoading(false);
+        resultView_->setLoading(false);
+        view_->setFrame(frame);
+        updateViewerCircles(frame);
+    }
+    updateNavUi();
+    emitFileInfo(current_);
+}
+
+void PhotoPanel::emitFileInfo(int64_t index)
+{
+    if (index < 0 || index >= reader_.count())
+        return;
+    const QString path = QString::fromStdString(reader_.filePath(index));
+    const QFileInfo fi(path);
+    PhotoFileInfo info;
+    info.name = fi.fileName().toStdString();
+    info.path = fi.absoluteFilePath().toStdString();
+    info.sizeBytes = fi.size();
+    info.modifyDate = fi.lastModified().toString(Qt::ISODate).toStdString();
+    info.width = reader_.width();
+    info.height = reader_.height();
+    const QString ext = fi.suffix().toUpper();
+    info.type = ext.isEmpty() ? QStringLiteral("Desconocido").toStdString()
+                              : ext.toStdString();
+    emit photoMetaChanged(info, reader_.exifInfo(index));
+    depLog(QStringLiteral("emitFileInfo idx=%1 count=%2 name=%3")
+               .arg(index).arg(reader_.count()).arg(QString::fromStdString(info.name)));
 }
 
 void PhotoPanel::showCurrent()
 {
     if (!reader_.isOpen())
         return;
+    // La info del fichero/EXIF se actualiza siempre al cambiar de foto, tanto
+    // por la ruta síncrona (sin loader) como por la asíncrona (el loader no
+    // re-emite frameReady para índices ya en caché).
+    emitFileInfo(current_);
     if (!loader_ || !loader_->isRunning()) {
         showCurrentSync();
         return;
@@ -643,6 +744,16 @@ void PhotoPanel::updateNavUi()
     }
     infoLabel_->setText(info);
     emit photoStatusChanged(photoStatusText());
+
+    // Vista previa del timelapse: solo con 2+ fotos y sin trabajo en curso.
+    const bool canPlay = reader_.isOpen() && reader_.count() >= 2 && !isBusy();
+    if (playAction_) {
+        playAction_->setEnabled(canPlay);
+        if (fpsCombo_)
+            fpsCombo_->setEnabled(canPlay);
+        if (!canPlay && playbackTimer_ && playbackTimer_->isActive())
+            playAction_->setChecked(false);
+    }
 }
 
 void PhotoPanel::onRoiSelected(const QRect& rect)
@@ -1036,6 +1147,8 @@ void PhotoPanel::onExportFinished(bool ok, const QString& error, int frames)
 void PhotoPanel::setTrackingBusy(bool busy)
 {
     trackingBusy_ = busy;
+    if (busy && playAction_ && playAction_->isChecked())
+        playAction_->setChecked(false); // no reproducir mientras se calcula
     applyViewModes();
     stopAction_->setEnabled(busy);
     prevAction_->setEnabled(!busy);
@@ -1401,6 +1514,9 @@ void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
     resultView_->setLoading(false);
     view_->setFrame(frame);
     updateViewerCircles(frame);
+    // El EXIF y la info del fichero también se actualizan al cargar por el
+    // loader (la ruta síncrona showCurrentSync se usa solo sin loader).
+    emitFileInfo(index);
 }
 
 void PhotoPanel::onFilmstripChanged(QListWidgetItem* item)

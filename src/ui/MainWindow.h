@@ -174,6 +174,11 @@ private:
     int64_t stepUs_ = 40000;
     int64_t totalUs_ = 0;
     int64_t totalFrames_ = 0;
+    // Info del fichero de vídeo (cacheada al abrir) para el panel Información.
+    QString videoFileName_;
+    QString videoFilePath_;
+    QString videoFileDate_;
+    qint64 videoFileSize_ = 0;
     QRect roi_;
     // Último frame mostrado (para "Ajustar fotograma": detectar el disco sin
     // re-leer el vídeo) y muestras del seguimiento del análisis por frame.

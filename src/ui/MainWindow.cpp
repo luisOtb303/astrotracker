@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "common/AppLog.h"
+#include "ui/DebugDep.h"
 #include "ui/AboutDialog.h"
 #include "ui/PhotoPanel.h"
 #include "ui/VideoView.h"
@@ -16,8 +17,10 @@
 #include "export/PipelineWorker.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
+#include <QColor>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDoubleSpinBox>
@@ -69,7 +72,15 @@ MainWindow::MainWindow(QWidget* parent)
     recentProjects_ = settings.value("Projects/recentFiles").toStringList();
 
     connect(photosPanel_, &PhotoPanel::modified, this, &MainWindow::markProjectModified);
-    connect(photosPanel_, &PhotoPanel::photoExifChanged, infoPanel_, &InfoPanel::setExifInfo);
+    connect(photosPanel_, &PhotoPanel::photoMetaChanged,
+            this, [this](const PhotoFileInfo& file, const PhotoExifInfo& exif) {
+                depLog(QStringLiteral("metaChanged name=%1 size=%2 hasCam=%3 hasExif=%4")
+                           .arg(QString::fromStdString(file.name))
+                           .arg(file.sizeBytes)
+                           .arg(exif.hasCamera())
+                           .arg(QString::fromStdString(file.type)));
+                infoPanel_->setFileAndExif(file, exif);
+            });
     connect(trackerCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int) { if (reader_) markProjectModified(); });
     connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -287,6 +298,7 @@ void MainWindow::setupUi()
             [this](const QString& msg, int timeoutMs) {
                 statusBar()->showMessage(msg, timeoutMs);
                 refreshProjectUi();
+                updatePanelMode();
             });
     connect(photosPanel_, &PhotoPanel::workProgress, this, [this](int done, int total) {
         if (!progressBar_)
@@ -644,6 +656,13 @@ void MainWindow::openPath(const QString& path)
     reader_ = std::move(reader);
     totalUs_ = reader_->durationUs();
     totalFrames_ = reader_->frameCount();
+    {
+        const QFileInfo fi(inPath_);
+        videoFileName_ = fi.fileName();
+        videoFilePath_ = fi.absoluteFilePath();
+        videoFileSize_ = fi.size();
+        videoFileDate_ = fi.lastModified().toString(Qt::ISODate);
+    }
     if (reader_->fps() > 0.0)
         stepUs_ = static_cast<int64_t>(1000000.0 / reader_->fps());
     currentUs_ = 0;
@@ -715,6 +734,10 @@ void MainWindow::presentFrame(const Frame& frame)
             trackerCombo_ ? trackerCombo_->currentText() : QString(),
             0.0f, 0.0f, 0.0f,
             offsets_.empty() ? tr("No tracking") : tr("Tracking active"));
+        infoPanel_->setVideoFileInfo(videoFileName_, videoFilePath_,
+                                     videoFileSize_, videoFileDate_,
+                                     static_cast<int>(frame.index),
+                                     static_cast<int>(totalFrames_));
     }
 }
 
@@ -1209,23 +1232,34 @@ void MainWindow::onLogMessage(int level, const QString& text)
 {
     if (level == AppLog::Debug && debugCheck_ && !debugCheck_->isChecked())
         return;
+
+    // Elige colores legibles según el tema del sistema (claro u oscuro).
+    static const bool dark = [] {
+        const QColor bg = QApplication::palette().window().color();
+        return bg.lightness() < 128;
+    }();
+    const QString infoC  = dark ? QStringLiteral("#e8e8e8") : QStringLiteral("#222");
+    const QString warnC  = dark ? QStringLiteral("#e6b64c") : QStringLiteral("#a06000");
+    const QString errC   = dark ? QStringLiteral("#ff6b6b") : QStringLiteral("#c00");
+    const QString debugC = dark ? QStringLiteral("#9a9a9a") : QStringLiteral("#888");
+
     QString color;
     QString tag;
     switch (level) {
     case AppLog::Error:
-        color = QStringLiteral("#c00");
+        color = errC;
         tag = tr("[error]");
         break;
     case AppLog::Warn:
-        color = QStringLiteral("#a06000");
+        color = warnC;
         tag = tr("[aviso]");
         break;
     case AppLog::Debug:
-        color = QStringLiteral("#888");
+        color = debugC;
         tag = tr("[debug]");
         break;
     default:
-        color = QStringLiteral("#222");
+        color = infoC;
         break;
     }
     QString line = tag.isEmpty() ? text : tag + QStringLiteral(" ") + text;
@@ -1355,11 +1389,15 @@ void MainWindow::updatePanelMode()
     const bool onPhotoTab = !onVideoTab;
 
     if (infoPanel_) {
-        infoPanel_->setTrackingVisible(hasContent);
-        infoPanel_->setFrameInfoVisible(hasContent);
-        infoPanel_->setExifVisible(onPhotoTab && photosPanel_->isOpen());
+        depLog(QStringLiteral("updatePanelMode onPhoto=%1 hasContent=%2 isOpen=%3")
+                   .arg(onPhotoTab).arg(hasContent).arg(photosPanel_->isOpen()));
+        infoPanel_->setTrackingVisible(hasContent && onVideoTab);
+        infoPanel_->setFrameInfoVisible(hasContent && onVideoTab);
+        // "Archivo y metadatos" se muestra en ambos modos con contenido:
+        // en Fotos = fichero + EXIF; en Vídeo = fichero + frame.
+        infoPanel_->setFileInfoVisible(hasContent);
         if (!onPhotoTab || !photosPanel_->isOpen())
-            infoPanel_->clearExifInfo();
+            infoPanel_->clearFileInfo();
     }
 }
 
