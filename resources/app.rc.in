@@ -1,3 +1,49 @@
-// Recurso de icono del ejecutable AstroTracker (Explorador de Windows).
-// La ruta del .ico la inyecta CMake (configure_file) para que sea absoluta.
+// Recurso de icono y versión del ejecutable AstroTracker (Explorador de
+// Windows). Las rutas y la versión las inyecta CMake (configure_file).
 IDI_ICON1 ICON "@APP_ICON_PATH@"
+
+// La versión aparece en "Propiedades" del .exe (File/Product version). Se
+// propaga automáticamente desde project(... VERSION) en CMakeLists.txt.
+#define VER_FILEVERSION        @APP_VERSION_MAJOR@,@APP_VERSION_MINOR@,@APP_VERSION_PATCH@,0
+#define VER_FILEVERSION_STR    "@APP_VERSION@.0"
+#define VER_PRODUCTVERSION     @APP_VERSION_MAJOR@,@APP_VERSION_MINOR@,@APP_VERSION_PATCH@,0
+#define VER_PRODUCTVERSION_STR "@APP_VERSION@"
+#define VER_COMPANYNAME        "@APP_COMPANY_NAME@"
+#define VER_FILEDESCRIPTION    "@APP_PRODUCT_NAME@ (seguimiento y estabilización de vídeos astronómicos)"
+#define VER_INTERNALNAME       "@APP_INTERNAL_NAME@"
+#define VER_ORIGINALFILENAME   "@APP_INTERNAL_NAME@.exe"
+#define VER_PRODUCTNAME        "@APP_PRODUCT_NAME@"
+#define VER_LEGALCOPYRIGHT     "Copyright (C) @APP_COPYRIGHT_YEAR@ @APP_COMPANY_NAME@. Licencia GPL-3.0."
+// Windows (version.dll) localiza el recurso de versión por ID 1, no por
+// cadena; por eso la macro debe valer 1 para que el resource se indexe como
+// VS_VERSION_INFO con ID numerico (igual que la plantilla por defecto de MSVC).
+#define VS_VERSION_INFO 1
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION     VER_FILEVERSION
+ PRODUCTVERSION  VER_PRODUCTVERSION
+ FILEFLAGSMASK   0x3fL
+ FILEFLAGS       0x0L
+ FILEOS          0x40004L
+ FILETYPE        0x1L
+ FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0" /* en-US, Unicode */
+        BEGIN
+            VALUE "CompanyName",      VER_COMPANYNAME
+            VALUE "FileDescription",  VER_FILEDESCRIPTION
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "InternalName",     VER_INTERNALNAME
+            VALUE "LegalCopyright",   VER_LEGALCOPYRIGHT
+            VALUE "OriginalFilename", VER_ORIGINALFILENAME
+            VALUE "ProductName",      VER_PRODUCTNAME
+            VALUE "ProductVersion",   VER_PRODUCTVERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

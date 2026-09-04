@@ -5,13 +5,28 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Icono del .exe: se genera app.rc a partir de la plantilla con la ruta absoluta
-# del .ico (multi-tamaño) para el compilador de recursos de MSVC.
+# MSVC: habilita Control Flow Guard (compilación + enlazado) en Release. La
+# protección añade checks de flujo de control frente a exploits de salto.
+if(MSVC)
+  add_compile_options($<$<CONFIG:Release>:/guard:cf>)
+  add_link_options($<$<CONFIG:Release>:/guard:cf>)
+endif()
+
+# Icono y versión del .exe: se genera app.rc a partir de la plantilla con la
+# ruta absoluta del .ico (multi-tamaño) y la versión para el compilador de
+# recursos de MSVC (VERSIONINFO).
 set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/resources/favicon/app.ico")
 string(REPLACE "\\" "/" APP_ICON_PATH "${APP_ICON_PATH}")
+set(APP_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(APP_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(APP_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(APP_VERSION "${PROJECT_VERSION}")
+set(APP_PRODUCT_NAME "AstroTracker")
+set(APP_INTERNAL_NAME "astrotracker")
+set(APP_COMPANY_NAME "AstroTracker Team")
+set(APP_COPYRIGHT_YEAR 2026)
 configure_file(resources/app.rc.in ${CMAKE_CURRENT_BINARY_DIR}/app.rc @ONLY)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -183,14 +198,67 @@ add_custom_command(TARGET astrotracker POST_BUILD
   COMMAND $<TARGET_FILE_DIR:Qt6::Core>/windeployqt.exe --no-translations --no-opengl-sw --release $<TARGET_FILE:astrotracker>
   COMMENT "Desplegando runtime Qt")
 
+# Copiar el runtime VC++ (MSVCP140/VCRUNTIME140) junto al ejecutable para que
+# AstroTracker funcione en equipos sin el redistributable de VC++ instalado.
+# windeployqt no incluye el CRT. Se busca el directorio reddist MSVC por orden:
+# 1) CMAKE_VS_MSVC_REDIST_DIR (introducido por el generador Visual Studio),
+# 2) $ENV{VCToolsRedistDir} (si se configura en un "Developer Prompt"),
+# 3) el directorio de pool de VS (VC/Redist/MSVC/<toolset>/x64/Microsoft.VC143.CRT),
+#    localizado bajo CMAKE_CXX_COMPILER o por búsqueda en la instalación.
+set(VC_CRT_DIR "")
+if(MSVC)
+  # 1) y 2) rutas directas habituales
+  foreach(_root "${CMAKE_VS_MSVC_REDIST_DIR}" "$ENV{VCToolsRedistDir}")
+    if(_root AND EXISTS "${_root}/x64/Microsoft.VC143.CRT/vcruntime140.dll")
+      set(VC_CRT_DIR "${_root}/x64/Microsoft.VC143.CRT")
+      break()
+    endif()
+  endforeach()
+  # 3) host de Visual Studio derivado del compilador: .../MSVC/<toolset>/redist
+  if(NOT VC_CRT_DIR AND CMAKE_CXX_COMPILER)
+    get_filename_component(_msvc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)   # .../bin/Hostx64/x64
+    get_filename_component(_msvc_host_dir "${_msvc_bin_dir}" DIRECTORY)       # .../bin/Hostx64
+    get_filename_component(_msvc_bin_parent "${_msvc_host_dir}" DIRECTORY)    # .../bin
+    get_filename_component(_msvc_toolset "${_msvc_bin_parent}" DIRECTORY)     # .../MSVC/<version>
+    if(EXISTS "${_msvc_toolset}/redist/x64/Microsoft.VC143.CRT/vcruntime140.dll")
+      set(VC_CRT_DIR "${_msvc_toolset}/redist/x64/Microsoft.VC143.CRT")
+    else()
+      # pool compartido de VC: VC/Redist/MSVC/<toolset>/x64/Microsoft.VC143.CRT
+      get_filename_component(_vc_dir "${_msvc_toolset}/../../.." ABSOLUTE)
+      file(GLOB _vc_pool_dirs "${_vc_dir}/Redist/MSVC/*")
+      list(SORT _vc_pool_dirs ORDER DESCENDING)
+      foreach(_pool_dir IN LISTS _vc_pool_dirs)
+        if(EXISTS "${_pool_dir}/x64/Microsoft.VC143.CRT/vcruntime140.dll")
+          set(VC_CRT_DIR "${_pool_dir}/x64/Microsoft.VC143.CRT")
+          break()
+        endif()
+      endforeach()
+    endif()
+  endif()
+  if(VC_CRT_DIR)
+    add_custom_command(TARGET astrotracker POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${VC_CRT_DIR}/msvcp140.dll"
+        "${VC_CRT_DIR}/vcruntime140.dll"
+        "${VC_CRT_DIR}/vcruntime140_1.dll"
+        $<TARGET_FILE_DIR:astrotracker>
+      COMMENT "Copiando runtime VC++ (MSVCP140/VCRUNTIME140)")
+  else()
+    message(WARNING "No se encontró el runtime reddist MSVC; MSVCP140/VCRUNTIME140 "
+                    "no se copiarán junto al ejecutable.")
+  endif()
+endif()
+
 # Copiar DLLs de FFmpeg junto al ejecutable
 file(GLOB FFMPEG_DLLS "${FFMPEG_ROOT}/bin/*.dll")
 add_custom_command(TARGET astrotracker POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FFMPEG_DLLS} $<TARGET_FILE_DIR:astrotracker>
   COMMENT "Copiando DLLs de FFmpeg")
 
-# Copiar DLL de OpenCV junto al ejecutable
-file(GLOB OPENCV_DLLS "${OpenCV_DIR}/x64/vc16/bin/opencv_world*.dll")
+# Copiar DLL de OpenCV junto al ejecutable (solo la variante Release; la DLL
+# debug opencv_world*d.dll no debe salir del árbol de build).
+file(GLOB OPENCV_DLLS "${OpenCV_DIR}/x64/vc16/bin/opencv_world[0-9]*.dll")
+list(FILTER OPENCV_DLLS EXCLUDE REGEX "opencv_world[0-9]+d\.dll$")
 add_custom_command(TARGET astrotracker POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OPENCV_DLLS} $<TARGET_FILE_DIR:astrotracker>
   COMMENT "Copiando DLLs de OpenCV")

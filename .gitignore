@@ -10,6 +10,25 @@ bin/
 testdata/eclipse/
 tests/test_lunar_eclipse_video/
 
+# Credenciales y secretos (profiláctico: no debe aparecer ninguno en el repo)
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+*.p7b
+
+# Símbolos de depuración, dumps y temporales
+*.pdb
+*.idb
+*.dmp
+*.bak
+*.swp
+*.orig
+
 # Favicon web-only de realfavicongenerator (se pueden regenerar); no son
 # entrada de build. Se versiona solo app.ico y app-icon-512.png.
 resources/favicon.zip
