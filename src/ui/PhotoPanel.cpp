@@ -80,6 +80,18 @@ void drawCircleOn(cv::Mat& bgr, const cv::Point2f& c, int r, const cv::Scalar& c
     }
 }
 
+// Cadena legible de la prioridad de un perfil (ej. "Template → Arco").
+QString profileMethodList(ObjectProfile profile)
+{
+    const auto methods = trackingProfileFor(profile).priority;
+    QString result;
+    for (size_t i = 0; i < methods.size(); ++i) {
+        if (i > 0) result += QStringLiteral(" \xE2\x86\x92 ");  // →
+        result += QString::fromUtf8(profileMethodName(methods[i]));
+    }
+    return result;
+}
+
 } // namespace
 
 PhotoPanel::PhotoPanel(QWidget* parent)
@@ -154,8 +166,10 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     tb->addSeparator();
     analyzeAction_ = tb->addAction(tr("Calcular automáticamente"));
     analyzeAction_->setEnabled(false);
-    analyzeAction_->setToolTip(tr("Seguir el disco en todas las fotos desde el círculo "
-                                  "de la semilla. Las fotos bloqueadas no se modifican."));
+    analyzeAction_->setToolTip(tr("Seguir el disco en todas las fotos. Si no hay "
+                                   "círculo semilla, se detectará automáticamente "
+                                   "en la foto actual. Las fotos bloqueadas no se "
+                                   "modifican."));
     connect(analyzeAction_, &QAction::triggered, this, &PhotoPanel::runTracking);
     fitAction_ = tb->addAction(tr("Ajustar fotograma"));
     fitAction_->setEnabled(false);
@@ -915,6 +929,23 @@ void PhotoPanel::onFitDisc()
     applyCircle(e.center, e.radius);
 }
 
+bool PhotoPanel::autoDetectSeed()
+{
+    cv::Mat fr;
+    if (!reader_.readAt(current_, fr, displayMaxDim_) || fr.empty())
+        return false;
+    cv::Mat g;
+    cv::cvtColor(fr, g, cv::COLOR_BGR2GRAY);
+    const cv::Rect full(0, 0, g.cols, g.rows);
+    const float guess = std::max(20.f, 0.10f * static_cast<float>(g.cols));
+    const DiscArcEstimate e = DiscArcFit::fitDisc(
+        g, full, cv::Point2f(g.cols * 0.5f, g.rows * 0.5f), guess, 3.f);
+    if (!e.ok || e.radius <= 0.f)
+        return false;
+    applyCircle(e.center, e.radius);
+    return true;
+}
+
 void PhotoPanel::startExportVideo()
 {
     runExportDialog(true);
@@ -1181,7 +1212,7 @@ void PhotoPanel::setTrackingBusy(bool busy)
 void PhotoPanel::updateTrackingUi()
 {
     const bool ready = reader_.isOpen() && !trackingBusy_;
-    analyzeAction_->setEnabled(ready && hasSeedCircle_);
+    analyzeAction_->setEnabled(ready);
     fitAction_->setEnabled(ready);
     exportVideoAction_->setEnabled(ready);
     exportPhotosAction_->setEnabled(ready);
@@ -1445,14 +1476,40 @@ bool PhotoPanel::applyState(const PhotoProjectPhotos& data, QString* error)
 
 void PhotoPanel::runTracking()
 {
-    if (worker_ || !reader_.isOpen() || !hasSeedCircle_)
+    if (worker_ || !reader_.isOpen())
         return;
+
+    if (!hasSeedCircle_) {
+        AppLog::info(tr("Auto-detectando disco en la foto %1...").arg(current_ + 1));
+        if (!autoDetectSeed()) {
+            QMessageBox::warning(this, tr("AstroTracker"),
+                tr("No se detectó disco en la foto %1.\n"
+                   "Dibuja un círculo manualmente o prueba en otra foto.")
+                    .arg(current_ + 1));
+            return;
+        }
+        const auto btn = QMessageBox::question(this, tr("AstroTracker"),
+            tr("Disco detectado en la foto %1 (centro=%2,%3 r=%4).\n"
+               "¿Calcular automáticamente desde aquí?")
+                .arg(current_ + 1)
+                .arg(seedCircle_.center.x, 0, 'f', 0)
+                .arg(seedCircle_.center.y, 0, 'f', 0)
+                .arg(seedCircle_.radius, 0, 'f', 0));
+        if (btn != QMessageBox::Yes)
+            return;
+    }
 
     AppLog::info(tr("Cálculo automático desde el círculo de la foto %1 (%2,%3 r%4)")
                      .arg(seedIndex_ + 1)
                      .arg(seedCircle_.center.x, 0, 'f', 0)
                      .arg(seedCircle_.center.y, 0, 'f', 0)
                      .arg(seedCircle_.radius, 0, 'f', 0));
+    AppLog::info(tr("Perfil: %1 | Métodos: %2")
+                     .arg(objectProfileName(trackingProfile_.profile))
+                     .arg(profileMethodList(trackingProfile_.profile)));
+    if (!methodOverrides_.empty())
+        AppLog::info(tr("Overrides por foto: %1 fotos con método fijado")
+                         .arg(methodOverrides_.size()));
 
     QStringList paths;
     paths.reserve(static_cast<int>(reader_.count()));

@@ -128,6 +128,7 @@ private:
     void ensureLoader();
     void updateViewerCircles(const cv::Mat& frame);
     void emitFileInfo(int64_t index);
+    bool autoDetectSeed();
 
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
