@@ -53,7 +53,7 @@ Get-ChildItem (Join-Path $build "AstroTracker-*-win64.*") |
     }
 
 # Tag anotado
-$ver = (Select-String -Path (Join-Path $root "CMakeLists.txt") -Pattern 'project\(AstroTracker VERSION (\S+)\)').Matches[0].Groups[1].Value
+$ver = (Select-String -Path (Join-Path $root "CMakeLists.txt") -Pattern 'project\(AstroTracker VERSION ([^ )]+)').Matches[0].Groups[1].Value
 $tag = "v$ver"
 $existingTag = git tag -l $tag 2>$null
 if ($existingTag) {
