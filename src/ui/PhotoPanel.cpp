@@ -1499,11 +1499,13 @@ void PhotoPanel::runTracking()
             return;
     }
 
-    AppLog::info(tr("Cálculo automático desde el círculo de la foto %1 (%2,%3 r%4)")
-                     .arg(seedIndex_ + 1)
-                     .arg(seedCircle_.center.x, 0, 'f', 0)
-                     .arg(seedCircle_.center.y, 0, 'f', 0)
-                     .arg(seedCircle_.radius, 0, 'f', 0));
+    AppLog::info(tr("Cálculo automático (modo foto a foto, DiscArcFit)"));
+    if (hasSeedCircle_)
+        AppLog::info(tr("Semilla: foto %1 (%2,%3 r%4)")
+                         .arg(seedIndex_ + 1)
+                         .arg(seedCircle_.center.x, 0, 'f', 0)
+                         .arg(seedCircle_.center.y, 0, 'f', 0)
+                         .arg(seedCircle_.radius, 0, 'f', 0));
     AppLog::info(tr("Perfil: %1 | Métodos: %2")
                      .arg(objectProfileName(trackingProfile_.profile))
                      .arg(profileMethodList(trackingProfile_.profile)));
@@ -1528,7 +1530,8 @@ void PhotoPanel::runTracking()
 
     worker_ = new PhotoTrackWorker(paths, seedCircle_, seedIndex_, displayMaxDim_,
                                    DiscTrackerParams(), trackingProfile_,
-                                   methodOverrides_, mask, this);
+                                   methodOverrides_, mask, this,
+                                   /*photoByPhoto=*/true);
 
     connect(worker_, &PhotoTrackWorker::progress, this, &PhotoPanel::onWorkerProgress);
     connect(worker_, &PhotoTrackWorker::reacquired, this, &PhotoPanel::onWorkerReacquired);
@@ -1537,9 +1540,7 @@ void PhotoPanel::runTracking()
     connect(worker_, &QThread::finished, worker_, &QObject::deleteLater);
 
     setTrackingBusy(true);
-    emit statusMessage(tr("Cálculo automático del centrado a partir del círculo de "
-                          "la foto %1...")
-                           .arg(seedIndex_ + 1));
+    emit statusMessage(tr("Cálculo automático del centrado (foto a foto)..."));
     emit workProgress(0, static_cast<int>(reader_.count()));
     worker_->start();
 }
