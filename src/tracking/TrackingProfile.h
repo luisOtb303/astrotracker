@@ -144,3 +144,19 @@ inline bool discMethodFromKey(const char* key, DiscMethod& out)
     if (keyEquals(key, "prediccion")) { out = DiscMethod::Prediction; return true; }
     return false;
 }
+
+// Nombre legible de cada método de detección (para logs y UI).
+inline const char* profileMethodName(DiscMethod m)
+{
+    switch (m) {
+    case DiscMethod::Template: return "Template";
+    case DiscMethod::ArcBlob: return "Arco";
+    case DiscMethod::KnownRadius: return "Radio conocido";
+    case DiscMethod::PhaseCorrelation: return "Correlación de fase";
+    case DiscMethod::Centroid: return "Centroide";
+    case DiscMethod::Ecc: return "ECC";
+    case DiscMethod::Features: return "Features";
+    case DiscMethod::Prediction: return "Predicción";
+    }
+    return "?";
+}
