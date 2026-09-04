@@ -5,6 +5,38 @@ Todas las modificaciones notables de AstroTracker se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
+## [0.4.1] - 2026-09-04
+
+### Added
+
+- **Detección foto a foto con DiscArcFit**: cada foto se analiza de forma
+  independiente con `DiscArcFit::fitDisc`, sin depender de la foto anterior. Si la
+  detección falla (poco soporte, poco arco), se usa la última foto buena como
+  **fallback con estado UNCERTAIN**. Radio fijo de la primera foto detectada;
+  si el radio cambia más de 5 px respecto a la foto anterior, se marca como
+  UNCERTAIN (detección incierta). El modo legacy (`DiscTracker` forward/backward)
+  se conserva.
+- **Semilla opcional**: la semilla manual (círculo dibujado) se usa como *prior*
+  en `DiscArcFit`, pero ya **no es obligatoria**. Si no hay semilla, la primera
+  foto se analiza sin prior y si falla se marca como LOST.
+- **Auto-detección de semilla**: al pulsar "Calcular automáticamente" sin
+  semilla, se ejecuta `DiscArcFit` en la foto actual y se muestra un diálogo de
+  confirmación si se detecta disco. Botón siempre habilitado cuando hay secuencia
+  abierta.
+- **Toolbar Archivo separada del toolbar Vídeo** (split de la barra de
+  herramientas): "Archivo" (Abrir, Abrir proyecto, Guardar) siempre visible;
+  "Vídeo" (Play/Pause, Paso, Detener) solo visible en la pestaña Vídeo con vídeo
+  cargado. Botones del dock de seguimiento ahora son `QToolButton` con
+  `setDefaultAction` (QPushButton no lo soporta en Qt 6).
+- **Log de perfil y método**: el log de salida incluye el nombre del perfil activo
+  y la cadena de métodos del perfil, además de los overrides por foto.
+
+### Changed
+
+- **Calcular siempre activo**: el botón "Calcular automáticamente" en Fotos ya no
+  requiere un círculo semilla previo; el flujo es: abrir secuencia → pulsar
+  Calcular → auto-detección → confirmar → cálculo foto a foto.
+
 ## [0.4.0] - 2026-09-03
 
 ### Added

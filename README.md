@@ -66,6 +66,13 @@ pero resolviendo un problema que PIPP no cubre bien.
   **"Ayuda > Licencias"** los textos completos de las licencias (GPLv3, LGPLv3,
   Apache-2.0, GPLv2, LGPL-2.1/CDDL) embebidos como recursos.
 
+## Capturas de pantalla
+
+| Modo Fotos — Detección del disco | Tracking completado |
+|:---:|:---:|
+| ![Captura 1](docs/screens/Astrotracker_screenshot-00.png) | ![Captura 2](docs/screens/Astrotracker_screenshot-01.png) |
+| *Círculo semilla dibujado sobre una Luna creciente; el filmstrip muestra 25 fotos RAW (CR2) de un eclipse lunar con sus miniaturas y el panel de metadatos (EXIF).* | *Tracking calculado: todas las fotos marcadas como "válida" con el círculo de seguimiento en cada miniatura; el visor Centrado muestra la Luna estabilizada.* |
+
 ## Uso (flujo típico)
 
 ```text
