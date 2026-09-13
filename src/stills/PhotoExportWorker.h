@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/ImageAdjust.h"
 #include "stills/PhotoSequenceReader.h"
 #include "tracking/DiscTracker.h"
 
@@ -7,6 +8,7 @@
 #include <QStringList>
 #include <QThread>
 #include <atomic>
+#include <map>
 #include <vector>
 
 // Worker en hilo separado que exporta las fotos ya centradas (resultado del
@@ -29,7 +31,8 @@ public:
         int borderMode = 0;      // 0 = negro, 1 = réplica
         int interp = 2;          // fotogramas intermedios por transición (MP4)
         bool normalizeBrightness = true; // suaviza el parpadeo entre fotos (MP4)
-        int whiteBalanceWarmth = 0; // -100..+100
+        ImageAdjust adjust;      // ajuste global de imagen
+        std::map<int, ImageAdjust> photoAdjusts; // overrides por foto
         QString outDir;          // imágenes
         QString outFile;         // mp4
     };

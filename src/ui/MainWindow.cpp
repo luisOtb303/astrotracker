@@ -1,7 +1,8 @@
 #include "ui/MainWindow.h"
 
 #include "common/AppLog.h"
-#include "common/WhiteBalance.h"
+#include "common/ImageAdjust.h"
+#include "ui/panels/ImageAdjustPanel.h"
 #include "ui/DebugDep.h"
 #include "ui/AboutDialog.h"
 #include "ui/PhotoPanel.h"
@@ -83,6 +84,8 @@ MainWindow::MainWindow(QWidget* parent)
                            .arg(exif.hasCamera())
                            .arg(QString::fromStdString(file.type)));
                 infoPanel_->setFileAndExif(file, exif);
+                imgPanel_->setDetectedKelvin(exif.colorTempK);
+                photosPanel_->syncPhotoAdjust();
             });
     connect(photosPanel_, &PhotoPanel::photoPositionChanged, this,
             [this](int64_t index) {
@@ -190,6 +193,16 @@ void MainWindow::setupUi()
         if (infoDock_)
             infoDock_->setVisible(on);
     });
+
+    imgDockAction_ = viewMenu->addAction(tr("&Imagen"));
+    imgDockAction_->setCheckable(true);
+    imgDockAction_->setChecked(true);
+    imgDockAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+I")));
+    connect(imgDockAction_, &QAction::toggled, this, [this](bool on) {
+        if (imgDock_)
+            imgDock_->setVisible(on);
+    });
+
     viewMenu->addSeparator();
     QAction* restorePanels = viewMenu->addAction(tr("&Restablecer paneles"));
     restorePanels->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
@@ -303,6 +316,40 @@ void MainWindow::setupUi()
     addDockWidget(Qt::RightDockWidgetArea, infoDock_);
     connect(infoDock_, &QDockWidget::visibilityChanged, infoDockAction_,
             &QAction::setChecked);
+
+    // Image Adjust dock
+    imgPanel_ = new ImageAdjustPanel(this);
+    imgDock_ = new QDockWidget(tr("Imagen"), this);
+    imgDock_->setObjectName(QStringLiteral("imageDock"));
+    imgDock_->setMinimumWidth(220);
+    imgDock_->setWidget(imgPanel_);
+    imgDock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::LeftDockWidgetArea, imgDock_);
+    connect(imgDock_, &QDockWidget::visibilityChanged, imgDockAction_,
+            &QAction::setChecked);
+    connect(imgPanel_, &ImageAdjustPanel::adjustEdited,
+            this, [this](const ImageAdjust& adj) {
+                if (tabs_->currentIndex() == 0) {
+                    if (adj == videoAdjust_) return;
+                    videoAdjust_ = adj;
+                    showCurrentFrame();
+                } else {
+                    photosPanel_->onImageAdjustChanged(adj);
+                }
+            });
+    connect(imgPanel_, &ImageAdjustPanel::resetRequested, this, [this]() {
+        if (tabs_->currentIndex() == 0) {
+            videoAdjust_ = ImageAdjust{};
+            showCurrentFrame();
+        } else {
+            photosPanel_->resetImageAdjust();
+        }
+    });
+    connect(imgPanel_, &ImageAdjustPanel::scopeChanged,
+            photosPanel_, &PhotoPanel::onScopeChanged);
+
+    // PhotoPanel necesita un puntero a imgPanel_ para sincronizar ajustes.
+    photosPanel_->setImageAdjustPanel(imgPanel_);
 
     connect(tabs_, &QTabWidget::currentChanged, this, [this]() {
         updateTransportUi();
@@ -534,16 +581,6 @@ QWidget* MainWindow::createVideoPage()
     toolbar->addSeparator();
     toolbar->addAction(stopAction_);
 
-    wbLabel_ = new QLabel(tr("WB"), central);
-    toolbar->addWidget(wbLabel_);
-    wbSlider_ = new QSlider(Qt::Horizontal, central);
-    wbSlider_->setRange(-100, 100);
-    wbSlider_->setValue(0);
-    wbSlider_->setFixedWidth(140);
-    wbSlider_->setToolTip(tr("Balance de blancos relativo al original (-100=frío, +100=cálido)"));
-    toolbar->addWidget(wbSlider_);
-    connect(wbSlider_, &QSlider::valueChanged, this, &MainWindow::onWbChanged);
-
     root->addWidget(toolbar);
 
     auto* viewers = new QHBoxLayout();
@@ -737,21 +774,13 @@ void MainWindow::showCurrentFrame()
     presentFrame(frame);
 }
 
-void MainWindow::onWbChanged(int value)
-{
-    if (value == wbWarmth_)
-        return;
-    wbWarmth_ = value;
-    showCurrentFrame();
-}
-
 void MainWindow::presentFrame(const Frame& frame)
 {
     currentUs_ = frame.ptsUs;
     if (!frame.image.empty())
         currentFrameImage_ = frame.image.clone();
-    const cv::Mat shown = wb::apply(frame.image, wbWarmth_);
-    view_->setFrame(shown);
+    view_->setFrame(frame.image);
+    const cv::Mat shown = img::apply(frame.image, videoAdjust_);
     resultView_->setFrame(displayFrame(shown, frame.index));
     updateTrackCircle(frame.index);
 
@@ -1139,7 +1168,7 @@ void MainWindow::runExportDialog(bool toVideo)
     st.borderMode = borderCombo_->currentIndex();
     st.interp = interpCombo->currentData().toInt();
     st.normalizeBrightness = brightChk->isChecked();
-    st.whiteBalanceWarmth = wbWarmth_;
+    st.adjust = videoAdjust_;
 
     const std::vector<cv::Point2f> exportOffsets =
         (centeredRadio->isChecked() && !offsets_.empty()) ? offsets_
@@ -1365,12 +1394,16 @@ void MainWindow::restoreDocks()
         logDock_->setVisible(true);
     if (infoDock_)
         infoDock_->setVisible(true);
+    if (imgDock_)
+        imgDock_->setVisible(true);
     if (trackDock_)
         addDockWidget(Qt::LeftDockWidgetArea, trackDock_);
     if (logDock_)
         addDockWidget(Qt::BottomDockWidgetArea, logDock_);
     if (infoDock_)
         addDockWidget(Qt::RightDockWidgetArea, infoDock_);
+    if (imgDock_)
+        addDockWidget(Qt::LeftDockWidgetArea, imgDock_);
     if (logDock_)
         resizeDocks({logDock_}, {160}, Qt::Vertical);
 }
@@ -1449,6 +1482,17 @@ void MainWindow::updatePanelMode()
         infoPanel_->setFileInfoVisible(hasContent);
         if (!onPhotoTab || !photosPanel_->isOpen())
             infoPanel_->clearFileInfo();
+    }
+
+    // Dock Imagen: sincronizar modo (Fotos / Vídeo) y contenido.
+    if (imgPanel_) {
+        if (onPhotoTab) {
+            imgPanel_->setMode(ImageAdjustPanel::Mode::Photos);
+            photosPanel_->syncPhotoAdjust();
+        } else {
+            imgPanel_->setMode(ImageAdjustPanel::Mode::Video);
+            imgPanel_->setAdjust(videoAdjust_);
+        }
     }
 
     // Timeline inferior: en el modo Fotos lo usa el preview del timelapse
@@ -1562,7 +1606,7 @@ PhotoProjectVideo MainWindow::collectVideo() const
     v.tracker = trackerCombo_->currentIndex();
     v.smoothingAlpha = smoothSpin_->value();
     v.borderMode = borderCombo_->currentIndex();
-    v.whiteBalanceWarmth = wbWarmth_;
+    v.adjust = videoAdjust_;
     return v;
 }
 
@@ -1577,9 +1621,9 @@ void MainWindow::applyVideo(const PhotoProjectVideo& v)
     trackerCombo_->setCurrentIndex(std::clamp(v.tracker, 0, 2));
     smoothSpin_->setValue(v.smoothingAlpha);
     borderCombo_->setCurrentIndex(std::clamp(v.borderMode, 0, 1));
-    wbWarmth_ = std::clamp(v.whiteBalanceWarmth, -100, 100);
-    if (wbSlider_)
-        wbSlider_->setValue(wbWarmth_);
+    videoAdjust_ = v.adjust;
+    if (imgPanel_)
+        imgPanel_->setAdjust(videoAdjust_);
 
     // La ROI y el inicio del análisis; los offsets del seguimiento no se
     // guardan (se recalculan con "Calcular automáticamente").

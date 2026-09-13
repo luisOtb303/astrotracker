@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/ImageAdjust.h"
 #include "export/PipelineWorker.h"
 #include "processing/Pipeline.h"
 #include "stills/PhotoProject.h"
@@ -33,6 +34,7 @@ struct Frame;
 // New UI components
 class ThemeManager;
 class InfoPanel;
+class ImageAdjustPanel;
 class TimelineWidget;
 class ShortcutManager;
 
@@ -62,7 +64,6 @@ private slots:
     void onFitFrame();
     void stopProcessing();
     void togglePreview(bool enabled);
-    void onWbChanged(int value);
     void startExportVideo();
     void startExportPhotos();
     void runExportDialog(bool toVideo);
@@ -171,9 +172,11 @@ private:
     QPushButton* clearOverrideBtn_ = nullptr;
     QGroupBox* videoGroup_ = nullptr;
 
-    QSlider* wbSlider_ = nullptr;
-    QLabel* wbLabel_ = nullptr;
-    int wbWarmth_ = 0;
+    // --- Image Adjust dock ---
+    ImageAdjustPanel* imgPanel_ = nullptr;
+    QDockWidget* imgDock_ = nullptr;
+    QAction* imgDockAction_ = nullptr;
+    ImageAdjust videoAdjust_;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;

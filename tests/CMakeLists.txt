@@ -252,14 +252,26 @@ target_link_libraries(test_disc PRIVATE ${OpenCV_LIBS})
 add_test(NAME test_disc COMMAND test_disc)
 
 add_executable(test_wb test_wb/main.cpp
-  ../src/common/WhiteBalance.h
-  ../src/common/WhiteBalance.cpp)
+  ../src/common/ImageAdjust.h
+  ../src/common/ImageAdjust.cpp)
 
 target_include_directories(test_wb PRIVATE ../src)
 target_compile_definitions(test_wb PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(test_wb PRIVATE ${OpenCV_LIBS})
 
 add_test(NAME test_wb COMMAND test_wb)
+
+# Test de ImageAdjust: apilado LP+WB+EV, monotonicidad, denoise, clamps.
+
+add_executable(test_imadjust test_imadjust/main.cpp
+  ../src/common/ImageAdjust.h
+  ../src/common/ImageAdjust.cpp)
+
+target_include_directories(test_imadjust PRIVATE ../src)
+target_compile_definitions(test_imadjust PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_imadjust PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_imadjust COMMAND test_imadjust)
 
 # Verificación local opcional con CR2 reales de un eclipse (testdata/eclipse/,
 # excluido del repo). Si la carpeta no existe, el test se omite.
@@ -318,8 +330,8 @@ endif()
 add_executable(test_export test_export/main.cpp
   ../src/common/Frame.h
   ../src/common/AppLog.h
-  ../src/common/WhiteBalance.h
-  ../src/common/WhiteBalance.cpp
+  ../src/common/ImageAdjust.h
+  ../src/common/ImageAdjust.cpp
   ../src/video/IVideoReader.h
   ../src/video/FFmpegVideoReader.h
   ../src/video/FFmpegVideoReader.cpp

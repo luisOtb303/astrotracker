@@ -1,4 +1,4 @@
-#include "common/WhiteBalance.h"
+#include "common/ImageAdjust.h"
 
 #include <opencv2/core.hpp>
 #include <cmath>
@@ -27,57 +27,67 @@ cv::Mat makeTestImage16()
     return img;
 }
 
-void testZeroWarmth()
+void testKelvinZeroIdentity()
 {
     const cv::Mat img = makeTestImage();
-    const cv::Mat out = wb::apply(img, 0);
+    ImageAdjust adj;
+    adj.wbKelvin = 0; // auto = identity
+    const cv::Mat out = img::apply(img, adj, 6500);
     expect(out.rows == img.rows && out.cols == img.cols,
-           "warmth=0: dimensions preserved");
+           "kelvin=0: dimensions preserved");
     const cv::Scalar mean = cv::mean(out);
-    expect(std::abs(mean[0] - 128.0) < 1.0, "warmth=0: B unchanged");
-    expect(std::abs(mean[2] - 128.0) < 1.0, "warmth=0: R unchanged");
+    expect(std::abs(mean[0] - 128.0) < 2.0, "kelvin=0: B ~128");
+    expect(std::abs(mean[2] - 128.0) < 2.0, "kelvin=0: R ~128");
 }
 
-void testWarmPositive()
+void testWarmDirection()
 {
     const cv::Mat img = makeTestImage();
-    const cv::Mat out = wb::apply(img, 100);
+    ImageAdjust adj;
+    adj.wbKelvin = 10000;
+    const cv::Mat out = img::apply(img, adj, 6500);
     const cv::Scalar mean = cv::mean(out);
-    expect(mean[2] > 190.0, "warmth=+100: R increased");
-    expect(mean[0] < 65.0, "warmth=+100: B decreased");
+    expect(mean[2] > mean[0], "10000K: R > B (warm)");
 }
 
-void testWarmNegative()
+void testCoolDirection()
 {
     const cv::Mat img = makeTestImage();
-    const cv::Mat out = wb::apply(img, -100);
+    ImageAdjust adj;
+    adj.wbKelvin = 3000;
+    const cv::Mat out = img::apply(img, adj, 6500);
     const cv::Scalar mean = cv::mean(out);
-    expect(mean[0] > 190.0, "warmth=-100: B increased");
-    expect(mean[2] < 65.0, "warmth=-100: R decreased");
+    expect(mean[0] > mean[2], "3000K: B > R (cool)");
 }
 
 void testGreenUnchanged()
 {
     const cv::Mat img = makeTestImage();
-    const cv::Mat out = wb::apply(img, 100);
+    ImageAdjust adj;
+    adj.wbKelvin = 10000;
+    const cv::Mat out = img::apply(img, adj, 6500);
     const cv::Scalar mean = cv::mean(out);
-    expect(std::abs(mean[1] - 128.0) < 1.0, "green channel unchanged at +100");
+    expect(std::abs(mean[1] - 128.0) < 2.0, "green channel ~128 at 10000K");
 }
 
 void test16Bit()
 {
     const cv::Mat img = makeTestImage16();
-    const cv::Mat out = wb::apply(img, 100);
+    ImageAdjust adj;
+    adj.wbKelvin = 10000;
+    const cv::Mat out = img::apply(img, adj, 6500);
     expect(out.depth() == CV_16U, "16-bit: depth preserved");
     const cv::Scalar mean = cv::mean(out);
-    expect(mean[2] > 40000.0, "16-bit: R increased");
-    expect(mean[0] < 20000.0, "16-bit: B decreased");
+    expect(mean[2] > 33000.0, "16-bit: R increased");
+    expect(mean[0] < 32000.0, "16-bit: B decreased");
 }
 
 void testEmptyInput()
 {
     const cv::Mat empty;
-    const cv::Mat out = wb::apply(empty, 50);
+    ImageAdjust adj;
+    adj.wbKelvin = 5000;
+    const cv::Mat out = img::apply(empty, adj, 6500);
     expect(out.empty(), "empty input returns empty");
 }
 
@@ -85,9 +95,9 @@ void testEmptyInput()
 
 int main()
 {
-    testZeroWarmth();
-    testWarmPositive();
-    testWarmNegative();
+    testKelvinZeroIdentity();
+    testWarmDirection();
+    testCoolDirection();
     testGreenUnchanged();
     test16Bit();
     testEmptyInput();

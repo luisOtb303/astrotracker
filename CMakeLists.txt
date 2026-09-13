@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AstroTracker VERSION 0.4.1 LANGUAGES CXX)
+project(AstroTracker VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,8 +66,8 @@ add_executable(astrotracker WIN32
   src/common/Frame.h
   src/common/CircleF.h
   src/common/PhotoExifInfo.h
-  src/common/WhiteBalance.h
-  src/common/WhiteBalance.cpp
+  src/common/ImageAdjust.h
+  src/common/ImageAdjust.cpp
   src/video/IVideoReader.h
   src/video/FFmpegVideoReader.h
   src/video/FFmpegVideoReader.cpp
@@ -81,6 +81,8 @@ add_executable(astrotracker WIN32
   src/ui/theme/ThemeManager.cpp
   src/ui/panels/InfoPanel.h
   src/ui/panels/InfoPanel.cpp
+  src/ui/panels/ImageAdjustPanel.h
+  src/ui/panels/ImageAdjustPanel.cpp
   src/ui/timeline/TimelineWidget.h
   src/ui/timeline/TimelineWidget.cpp
   src/ui/shortcuts/ShortcutManager.h

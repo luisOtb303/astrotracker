@@ -1,8 +1,9 @@
 #include "ui/PhotoPanel.h"
 
 #include "common/AppLog.h"
-#include "common/WhiteBalance.h"
+#include "common/ImageAdjust.h"
 #include "ui/DebugDep.h"
+#include "ui/panels/ImageAdjustPanel.h"
 #include "processing/BorderHandler.h"
 #include "stills/PhotoExportWorker.h"
 #include "stills/PhotoFrameLoader.h"
@@ -134,17 +135,6 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     connect(borderCombo_, &QComboBox::currentIndexChanged, this, [this](int) { emit modified(); });
 
     tb->addSeparator();
-    wbLabel_ = new QLabel(tr("WB"), this);
-    tb->addWidget(wbLabel_);
-    wbSlider_ = new QSlider(Qt::Horizontal, this);
-    wbSlider_->setRange(-100, 100);
-    wbSlider_->setValue(0);
-    wbSlider_->setFixedWidth(140);
-    wbSlider_->setToolTip(tr("Balance de blancos relativo al original (-100=frío, +100=cálido)"));
-    tb->addWidget(wbSlider_);
-    connect(wbSlider_, &QSlider::valueChanged, this, &PhotoPanel::onWbChanged);
-
-    tb->addSeparator();
     prevAction_ = tb->addAction(tr("Anterior"), this, &PhotoPanel::showPrev);
     nextAction_ = tb->addAction(tr("Siguiente"), this, &PhotoPanel::showNext);
     tb->addSeparator();
@@ -221,7 +211,7 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     sourceBox->addWidget(view_, 1);
 
     auto* resultBox = new QVBoxLayout();
-    auto* resTitle = new QLabel(tr("Centrado"), this);
+    auto* resTitle = new QLabel(tr("Procesado"), this);
     resTitle->setAlignment(Qt::AlignCenter);
     resultBox->addWidget(resTitle);
     resultView_ = new VideoView(this);
@@ -401,6 +391,10 @@ void PhotoPanel::clearSession()
     methodOverrides_.clear();
     loadingView_ = false;
     updatingBadges_ = false;
+    globalAdjust_ = ImageAdjust{};
+    photoAdjusts_.clear();
+    detectedKelvin_ = 0;
+    scopePerPhoto_ = false;
     if (lockAction_)
         lockAction_->setChecked(false);
     indexLabel_->setText(tr("Foto: - / -"));
@@ -588,10 +582,9 @@ void PhotoPanel::showCurrentSync()
         resultView_->setFrame(cv::Mat());
         return;
     }
-    frame = applyWb(frame);
     view_->setFrame(frame);
     updateViewerCircles(frame);
-
+    syncPhotoAdjust();
     emitFileInfo(current_);
 }
 
@@ -636,7 +629,6 @@ void PhotoPanel::onPlaybackTick()
     // para los RAW: leer y centrar es barato, idóneo para el preview en bucle.
     cv::Mat frame;
     if (reader_.readAt(current_, frame, displayMaxDim_) && !frame.empty()) {
-        frame = applyWb(frame);
         view_->setLoading(false);
         resultView_->setLoading(false);
         view_->setFrame(frame);
@@ -719,14 +711,16 @@ void PhotoPanel::showCurrent()
     loader_->requestLoad(current_);
 }
 
-void PhotoPanel::updateViewerCircles(const cv::Mat& frame)
+void PhotoPanel::updateViewerCircles(const cv::Mat& raw)
 {
+    cv::Mat processed = applyImage(raw);
+
     if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
         const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
         if (t.radius > 0.f) {
             view_->setCircle(QPointF(t.center.x, t.center.y), t.radius, t.predicted);
-            resultView_->setFrame(centeredFrame(frame, t));
-            resultView_->setCircle(QPointF(frame.cols / 2.0, frame.rows / 2.0),
+            resultView_->setFrame(centeredFrame(processed, t));
+            resultView_->setCircle(QPointF(raw.cols / 2.0, raw.rows / 2.0),
                                    t.radius, t.predicted);
             return;
         }
@@ -735,10 +729,10 @@ void PhotoPanel::updateViewerCircles(const cv::Mat& frame)
     if (hasSeedCircle_) {
         view_->setCircle(QPointF(seedCircle_.center.x, seedCircle_.center.y),
                          seedCircle_.radius, false);
-        resultView_->setFrame(centeredFrame(frame, seedCircle_));
+        resultView_->setFrame(centeredFrame(processed, seedCircle_));
         resultView_->clearCircle();
     } else {
-        resultView_->setFrame(frame);
+        resultView_->setFrame(processed);
         resultView_->clearCircle();
     }
 }
@@ -828,18 +822,72 @@ void PhotoPanel::setDrawModeCircle(bool circle)
     applyViewModes();
 }
 
-void PhotoPanel::onWbChanged(int value)
+void PhotoPanel::onImageAdjustChanged(const ImageAdjust& adj)
 {
-    if (value == wbWarmth_)
-        return;
-    wbWarmth_ = value;
-    emit modified();
-    showCurrent();
+    const int key = static_cast<int>(current_);
+    if (scopePerPhoto_) {
+        // Solo esta foto: crear/actualizar el override; NO tocar global.
+        const auto it = photoAdjusts_.find(key);
+        if (it != photoAdjusts_.end() && it->second == adj)
+            return;
+        photoAdjusts_[key] = adj;
+    } else {
+        // Todas las fotos: sobrescribir global, limpiar overrides.
+        if (adj == globalAdjust_)
+            return;
+        globalAdjust_ = adj;
+        photoAdjusts_.clear();
+    }
+    syncPhotoAdjust();
 }
 
-cv::Mat PhotoPanel::applyWb(const cv::Mat& src) const
+cv::Mat PhotoPanel::applyImage(const cv::Mat& src) const
 {
-    return wb::apply(src, wbWarmth_);
+    return img::apply(src, effectiveAdjust(), detectedKelvin_);
+}
+
+ImageAdjust PhotoPanel::effectiveAdjust() const
+{
+    const int key = static_cast<int>(current_);
+    const auto it = photoAdjusts_.find(key);
+    return (it != photoAdjusts_.end()) ? it->second : globalAdjust_;
+}
+
+void PhotoPanel::onScopeChanged(bool perPhoto)
+{
+    scopePerPhoto_ = perPhoto;
+    syncPhotoAdjust();
+}
+
+void PhotoPanel::syncPhotoAdjust()
+{
+    const ImageAdjust eff = effectiveAdjust();
+    // No tocar el panel si la foto no está abierta aún.
+    if (!reader_.isOpen() || current_ < 0 || current_ >= reader_.count())
+        return;
+    // Señales bloqueadas para no disparar un bucle infinito
+    // (adjustEdited → onImageAdjustChanged → syncPhotoAdjust).
+    imgPanel_->blockSignals(true);
+    imgPanel_->setAdjust(eff);
+    imgPanel_->setDetectedKelvin(detectedKelvin_);
+    imgPanel_->blockSignals(false);
+}
+
+void PhotoPanel::resetImageAdjust()
+{
+    globalAdjust_ = ImageAdjust{};
+    photoAdjusts_.clear();
+    syncPhotoAdjust();
+}
+
+void PhotoPanel::setDetectedKelvin(int kelvin)
+{
+    detectedKelvin_ = kelvin;
+}
+
+void PhotoPanel::setImageAdjustPanel(ImageAdjustPanel* panel)
+{
+    imgPanel_ = panel;
 }
 
 void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
@@ -1151,7 +1199,8 @@ void PhotoPanel::runExportDialog(bool toVideo)
     st.borderMode = borderCombo_->currentIndex();
     st.interp = interpCombo->currentData().toInt();
     st.normalizeBrightness = brightChk->isChecked();
-    st.whiteBalanceWarmth = wbWarmth_;
+    st.adjust = effectiveAdjust();
+    st.photoAdjusts = photoAdjusts_;
 
     // Si se elige "Centrado" pero no hay tracks, se fuerza Directo (regla:
     // nunca descartar frames; se conserva el frame tal cual).
@@ -1355,7 +1404,8 @@ PhotoProjectPhotos PhotoPanel::collectState() const
     d.seedX = seedCircle_.center.x;
     d.seedY = seedCircle_.center.y;
     d.seedRadius = seedCircle_.radius;
-    d.whiteBalanceWarmth = wbWarmth_;
+    d.adjust = globalAdjust_;
+    d.adjustOverrides = photoAdjusts_;
 
     // Resultado disperso: solo se guardan fotos con círculo o con alguna marca
     // (bloqueada, fijada o excluida de la exportación).
@@ -1501,9 +1551,8 @@ bool PhotoPanel::applyState(const PhotoProjectPhotos& data, QString* error)
     current_ = std::min<int64_t>(std::max<int64_t>(data.currentIndex, 0),
                                  std::max<int64_t>(total - 1, 0));
 
-    wbWarmth_ = std::clamp(data.whiteBalanceWarmth, -100, 100);
-    if (wbSlider_)
-        wbSlider_->setValue(wbWarmth_);
+    globalAdjust_ = data.adjust;
+    photoAdjusts_ = data.adjustOverrides;
 
     updateFilmstripBadges();
     updateTrackingUi();
@@ -1621,18 +1670,17 @@ void PhotoPanel::onPhotoProcessed(int64_t index)
     // si no, directa (va mostrando el avance del cálculo).
     cv::Mat frame;
     if (reader_.readAt(index, frame, displayMaxDim_) && !frame.empty()) {
-        frame = applyWb(frame);
         view_->setFrame(frame);
         if (analyzed_ && index < static_cast<int64_t>(tracks_.size())) {
             const DiscTrack& t = tracks_[static_cast<size_t>(index)];
             if (t.radius > 0.f) {
-                resultView_->setFrame(centeredFrame(frame, t));
+                resultView_->setFrame(centeredFrame(applyImage(frame), t));
                 resultView_->setCircle(QPointF(frame.cols / 2.0, frame.rows / 2.0),
                                        t.radius, t.predicted);
                 return;
             }
         }
-        resultView_->setFrame(frame);
+        resultView_->setFrame(applyImage(frame));
         resultView_->clearCircle();
     }
 }
@@ -1645,9 +1693,8 @@ void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
     applyViewModes();
     view_->setLoading(false);
     resultView_->setLoading(false);
-    const cv::Mat shown = applyWb(frame);
-    view_->setFrame(shown);
-    updateViewerCircles(shown);
+    view_->setFrame(frame);
+    updateViewerCircles(frame);
     // El EXIF y la info del fichero también se actualizan al cargar por el
     // loader (la ruta síncrona showCurrentSync se usa solo sin loader).
     emitFileInfo(index);

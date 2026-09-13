@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/CircleF.h"
+#include "common/ImageAdjust.h"
 #include "common/PhotoFileInfo.h"
 #include "motion/TrackStatus.h"
 #include "stills/PhotoProject.h"
@@ -22,6 +23,7 @@ class VideoView;
 class PhotoTrackWorker;
 class PhotoExportWorker;
 class PhotoFrameLoader;
+class ImageAdjustPanel;
 class PhotoFilmstrip;
 
 // Pestaña "Fotos": abre una secuencia de fotos (JPG/PNG/TIFF/BMP y RAW CR2/CR3)
@@ -65,6 +67,21 @@ public:
     void openRecentFolder(const QString& dir);
     QStringList recentFolders() const { return recentFolders_; }
 
+    // Señales de la foto actual (para el dock Imagen).
+    void setDetectedKelvin(int kelvin);
+    // Ajuste efectivo para la foto actual (override o global).
+    ImageAdjust effectiveAdjust() const;
+    // Restablece los ajustes de imagen a los valores por defecto.
+    void resetImageAdjust();
+    // Sincroniza el panel de ajuste con la foto actual (llamar al cambiar de foto).
+    void syncPhotoAdjust();
+    // Aplica el ajuste recibido del dock Imagen.
+    void onImageAdjustChanged(const ImageAdjust& adj);
+    // Cambio de alcance (global / solo esta foto).
+    void onScopeChanged(bool perPhoto);
+    // Asocia el dock de imagen (para sincronización bidireccional).
+    void setImageAdjustPanel(ImageAdjustPanel* panel);
+
 signals:
     // Mensaje en la barra de estado de la ventana principal (timeoutMs 0 =
     // permanente hasta el siguiente mensaje).
@@ -103,7 +120,6 @@ private slots:
     void onPhotoProcessed(int64_t index);
     void onFrameReady(int64_t index, const cv::Mat& frame);
     void setDrawModeCircle(bool circle);
-    void onWbChanged(int value);
     void runTracking();
     void stopTracking();
     void onWorkerProgress(int done, int total);
@@ -134,7 +150,7 @@ private:
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
     static QPixmap toPixmap(const cv::Mat& bgr);
-    cv::Mat applyWb(const cv::Mat& src) const;
+    cv::Mat applyImage(const cv::Mat& src) const;
 
     PhotoSequenceReader reader_;
     PhotoFilmstrip* filmstrip_ = nullptr;
@@ -154,10 +170,12 @@ private:
     QAction* lockAction_ = nullptr;
     QAction* resetAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
-    // Balance de blancos: slider -100..+100, 0 = original.
-    QSlider* wbSlider_ = nullptr;
-    QLabel* wbLabel_ = nullptr;
-    int wbWarmth_ = 0;
+    ImageAdjustPanel* imgPanel_ = nullptr;
+    // Balance de blancos y ajuste de imagen global + overrides por foto.
+    ImageAdjust globalAdjust_;
+    std::map<int, ImageAdjust> photoAdjusts_;
+    int detectedKelvin_ = 0;
+    bool scopePerPhoto_ = false;
     // Reproducción del timelapse (preview con selector de fps, bucle).
     QAction* playAction_ = nullptr;
     QComboBox* fpsCombo_ = nullptr;

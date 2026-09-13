@@ -68,7 +68,35 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
         s.insert(QStringLiteral("radio"), static_cast<double>(p.seedRadius));
         o.insert(QStringLiteral("semilla"), s);
     }
-    o.insert(QStringLiteral("wbCalor"), p.whiteBalanceWarmth);
+    if (!p.adjust.isDefault()) {
+        QJsonObject aj;
+        aj.insert(QStringLiteral("wbK"), p.adjust.wbKelvin);
+        aj.insert(QStringLiteral("lpSodio"), p.adjust.lpSodium);
+        aj.insert(QStringLiteral("lpMercurio"), p.adjust.lpMercury);
+        aj.insert(QStringLiteral("ev"), p.adjust.exposureEv);
+        aj.insert(QStringLiteral("brillo"), p.adjust.brightness);
+        aj.insert(QStringLiteral("contraste"), p.adjust.contrast);
+        aj.insert(QStringLiteral("ruido"), p.adjust.denoise);
+        o.insert(QStringLiteral("ajuste"), aj);
+    }
+    if (!p.adjustOverrides.empty()) {
+        QJsonArray overrides;
+        for (const auto& [idx, adj] : p.adjustOverrides) {
+            QJsonObject e;
+            e.insert(QStringLiteral("indice"), idx);
+            QJsonObject aj;
+            aj.insert(QStringLiteral("wbK"), adj.wbKelvin);
+            aj.insert(QStringLiteral("lpSodio"), adj.lpSodium);
+            aj.insert(QStringLiteral("lpMercurio"), adj.lpMercury);
+            aj.insert(QStringLiteral("ev"), adj.exposureEv);
+            aj.insert(QStringLiteral("brillo"), adj.brightness);
+            aj.insert(QStringLiteral("contraste"), adj.contrast);
+            aj.insert(QStringLiteral("ruido"), adj.denoise);
+            e.insert(QStringLiteral("ajuste"), aj);
+            overrides.append(e);
+        }
+        o.insert(QStringLiteral("ajustesFotos"), overrides);
+    }
 
     QJsonArray results;
     for (const PhotoProjectPhotoResult& r : p.results) {
@@ -111,7 +139,17 @@ QJsonObject encodeVideo(const PhotoProjectVideo& v)
     o.insert(QStringLiteral("tracker"), v.tracker);
     o.insert(QStringLiteral("suavizado"), v.smoothingAlpha);
     o.insert(QStringLiteral("borde"), v.borderMode);
-    o.insert(QStringLiteral("wbCalor"), v.whiteBalanceWarmth);
+    if (!v.adjust.isDefault()) {
+        QJsonObject aj;
+        aj.insert(QStringLiteral("wbK"), v.adjust.wbKelvin);
+        aj.insert(QStringLiteral("lpSodio"), v.adjust.lpSodium);
+        aj.insert(QStringLiteral("lpMercurio"), v.adjust.lpMercury);
+        aj.insert(QStringLiteral("ev"), v.adjust.exposureEv);
+        aj.insert(QStringLiteral("brillo"), v.adjust.brightness);
+        aj.insert(QStringLiteral("contraste"), v.adjust.contrast);
+        aj.insert(QStringLiteral("ruido"), v.adjust.denoise);
+        o.insert(QStringLiteral("ajuste"), aj);
+    }
     return o;
 }
 
@@ -173,8 +211,41 @@ void decodePhotos(const QJsonObject& o, PhotoProjectPhotos& p)
         p.seedY = static_cast<float>(readDouble(seed.value(QLatin1String("y")), 0.0));
         p.seedRadius = static_cast<float>(readDouble(seed.value(QLatin1String("radio")), 0.0));
     }
-    p.whiteBalanceWarmth = std::clamp(
-        readInt(o.value(QLatin1String("wbCalor")), 0), -100, 100);
+
+    // Ajuste de imagen (v0.5.0+): "ajuste" objeto.
+    const QJsonObject aj = o.value(QLatin1String("ajuste")).toObject();
+    if (!aj.isEmpty()) {
+        p.adjust.wbKelvin = readInt(aj.value(QLatin1String("wbK")), 0);
+        p.adjust.lpSodium = readInt(aj.value(QLatin1String("lpSodio")), 0);
+        p.adjust.lpMercury = readInt(aj.value(QLatin1String("lpMercurio")), 0);
+        p.adjust.exposureEv = readInt(aj.value(QLatin1String("ev")), 0);
+        p.adjust.brightness = readInt(aj.value(QLatin1String("brillo")), 0);
+        p.adjust.contrast = readInt(aj.value(QLatin1String("contraste")), 0);
+        p.adjust.denoise = readInt(aj.value(QLatin1String("ruido")), 0);
+    } else {
+        // Fallback: "wbCalor" (pre-0.5.0) → mapear a wbKelvin=0 (auto).
+        // Los proyectos viejos con warmth se ignoran (valor obsoleto).
+        p.adjust = ImageAdjust{};
+    }
+
+    // Overrides por foto: "ajustesFotos"
+    const auto ajOverrides = o.value(QLatin1String("ajustesFotos")).toArray();
+    for (const auto& item : ajOverrides) {
+        const QJsonObject e = item.toObject();
+        const int idx = readInt(e.value(QLatin1String("indice")), -1);
+        const QJsonObject adjObj = e.value(QLatin1String("ajuste")).toObject();
+        if (idx < 0 || adjObj.isEmpty())
+            continue;
+        ImageAdjust adj;
+        adj.wbKelvin = readInt(adjObj.value(QLatin1String("wbK")), 0);
+        adj.lpSodium = readInt(adjObj.value(QLatin1String("lpSodio")), 0);
+        adj.lpMercury = readInt(adjObj.value(QLatin1String("lpMercurio")), 0);
+        adj.exposureEv = readInt(adjObj.value(QLatin1String("ev")), 0);
+        adj.brightness = readInt(adjObj.value(QLatin1String("brillo")), 0);
+        adj.contrast = readInt(adjObj.value(QLatin1String("contraste")), 0);
+        adj.denoise = readInt(adjObj.value(QLatin1String("ruido")), 0);
+        p.adjustOverrides[idx] = adj;
+    }
 
     const auto results = o.value(QLatin1String("resultados")).toArray();
     p.results.reserve(static_cast<size_t>(results.size()));
@@ -221,8 +292,17 @@ void decodeVideo(const QJsonObject& o, PhotoProjectVideo& v)
     v.tracker = readInt(o.value(QLatin1String("tracker")));
     v.smoothingAlpha = readDouble(o.value(QLatin1String("suavizado")), 0.3);
     v.borderMode = readInt(o.value(QLatin1String("borde")));
-    v.whiteBalanceWarmth = std::clamp(
-        readInt(o.value(QLatin1String("wbCalor")), 0), -100, 100);
+    // Ajuste de imagen (v0.5.0+): "ajuste" objeto.
+    const QJsonObject aj = o.value(QLatin1String("ajuste")).toObject();
+    if (!aj.isEmpty()) {
+        v.adjust.wbKelvin = readInt(aj.value(QLatin1String("wbK")), 0);
+        v.adjust.lpSodium = readInt(aj.value(QLatin1String("lpSodio")), 0);
+        v.adjust.lpMercury = readInt(aj.value(QLatin1String("lpMercurio")), 0);
+        v.adjust.exposureEv = readInt(aj.value(QLatin1String("ev")), 0);
+        v.adjust.brightness = readInt(aj.value(QLatin1String("brillo")), 0);
+        v.adjust.contrast = readInt(aj.value(QLatin1String("contraste")), 0);
+        v.adjust.denoise = readInt(aj.value(QLatin1String("ruido")), 0);
+    }
 }
 
 } // namespace

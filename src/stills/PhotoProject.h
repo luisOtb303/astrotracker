@@ -1,10 +1,12 @@
 #pragma once
 
+#include "common/ImageAdjust.h"
 #include "tracking/TrackingProfile.h"
 
 #include <QString>
 #include <QStringList>
 #include <QtGlobal>
+#include <map>
 #include <vector>
 
 // Estado persistible de un proyecto AstroTracker (.atracker): el trabajo del
@@ -46,7 +48,8 @@ struct PhotoProjectPhotos {
     float seedX = 0.f;
     float seedY = 0.f;
     float seedRadius = 0.f;
-    int whiteBalanceWarmth = 0; // -100..+100
+    ImageAdjust adjust;
+    std::map<int, ImageAdjust> adjustOverrides; // override por foto (índice → ajuste)
     std::vector<PhotoProjectPhotoResult> results;
 
     // Índice del resultado cuyo archivo coincide con name (-1 si no hay).
@@ -66,7 +69,7 @@ struct PhotoProjectVideo {
     int tracker = 0;            // 0 = Template, 1 = Centroid
     double smoothingAlpha = 0.3;
     int borderMode = 0;         // 0 = borde negro, 1 = réplica
-    int whiteBalanceWarmth = 0; // -100..+100
+    ImageAdjust adjust;
 };
 
 struct PhotoProject {

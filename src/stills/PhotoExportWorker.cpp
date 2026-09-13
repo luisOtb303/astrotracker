@@ -1,7 +1,7 @@
 #include "stills/PhotoExportWorker.h"
 
 #include "common/AppLog.h"
-#include "common/WhiteBalance.h"
+#include "common/ImageAdjust.h"
 #include "processing/BorderHandler.h"
 #include "video/FFmpegVideoWriter.h"
 
@@ -187,8 +187,14 @@ void PhotoExportWorker::run()
             }
         }
 
-        // Balance de blancos antes del centrado/normalización.
-        work = wb::apply(work, settings_.whiteBalanceWarmth);
+        // Ajuste de imagen antes del centrado/normalización.
+        // Usar override por foto si existe, sino ajuste global.
+        ImageAdjust adj = settings_.adjust;
+        const auto it = settings_.photoAdjusts.find(static_cast<int>(i));
+        if (it != settings_.photoAdjusts.end())
+            adj = it->second;
+        const int detectedK = reader.exifInfo(i).colorTempK;
+        work = img::apply(work, adj, detectedK);
 
         // Centrado igual que el visor; las fotos sin resultado válido se
         // exportan sin desplazar (regla: nunca descartar frames).

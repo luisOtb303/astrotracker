@@ -39,6 +39,18 @@ PhotoProject makeSample()
     p.photos.seedX = 800.5f;
     p.photos.seedY = 601.25f;
     p.photos.seedRadius = 120.f;
+    {
+        ImageAdjust adj;
+        adj.wbKelvin = 5500;
+        adj.exposureEv = 5;
+        p.photos.adjust = adj;
+    }
+    {
+        ImageAdjust perPhoto;
+        perPhoto.wbKelvin = 7000;
+        perPhoto.lpSodium = 30;
+        p.photos.adjustOverrides[1] = perPhoto;
+    }
 
     // Resultado disperso: solo las fotos con círculo o alguna marca.
     PhotoProjectPhotoResult r1;
@@ -108,6 +120,14 @@ int main()
                sameFloat(dst.photos.seedRadius, 120.f),
            "circulo de la semilla preservado");
     expect(dst.photos.results.size() == 3, "resultados dispersos preservados");
+    expect(dst.photos.adjust.wbKelvin == 5500, "ajuste fotos: kelvin global");
+    expect(dst.photos.adjust.exposureEv == 5, "ajuste fotos: EV global");
+    expect(dst.photos.adjustOverrides.size() == 1, "ajuste fotos: overrides size");
+    if (!dst.photos.adjustOverrides.empty()) {
+        const auto& ov = dst.photos.adjustOverrides.begin()->second;
+        expect(ov.wbKelvin == 7000, "ajuste fotos: override kelvin");
+        expect(ov.lpSodium == 30, "ajuste fotos: override sodio");
+    }
 
     const int i2 = dst.photos.indexOfResult(QStringLiteral("IMG_0002.CR2"));
     expect(i2 >= 0, "resultado IMG_0002 encontrado");
@@ -150,6 +170,9 @@ int main()
     expect(dst.video.tracker == 1 && dst.video.borderMode == 1, "ajustes del pipeline");
     expect(dst.video.smoothingAlpha > 0.41 && dst.video.smoothingAlpha < 0.43,
            "suavizado preservado");
+    expect(dst.video.adjust.wbKelvin == 0 && dst.video.adjust.lpSodium == 0 &&
+               dst.video.adjust.exposureEv == 0,
+           "ajuste video: valores por defecto");
 
     // 2. Proyecto con secciones inactivas.
     PhotoProject empty;

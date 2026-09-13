@@ -5,6 +5,67 @@ Todas las modificaciones notables de AstroTracker se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
+## [0.5.0] - 2026-09-13
+
+### Added
+
+- **Vista dividida (raw / procesado)**: visor izquierdo muestra la imagen
+  original sin procesar; visor derecho muestra la imagen con ajustes aplicados y
+  centrada. Tanto en Fotos como en Vídeo.
+- **Botón "Detectar" WB**: ancla el deslizador a la temperatura EXIF de la foto
+  (si existe); sin EXIF, vuelve al neutro (11250 K).
+- **QSpinBox de Kelvin**: spinbox 2500–20000 "K" sincronizado con el slider para
+  entrada precisa.
+- **Deshacer (Undo)**: historial de hasta 30 pasos; botón "Deshacer" y atajo
+  Ctrl+Z. Cada movimiento del slider y cada cambio del spinbox se registra como
+  un paso independiente.
+- **Panel "Imagen" (ImageAdjustPanel)**: dock con controles completos de ajuste
+  de imagen: WB Kelvin, contaminación lumínica (Sodio 589nm / Mercurio
+  436/546/578nm), reducción de ruido (fastNlMeansDenoisingColored), exposición
+  (EV ±1), brillo y contraste. Modo Vídeo (global) y Fotos (global + override
+  por foto).
+- **Ajuste por foto (override)**: cada foto puede tener su propio `ImageAdjust`
+  independiente del global. Se almacenan en `PhotoProjectPhotos::adjustOverrides`
+  y se persisten en el JSON del proyecto (`ajustesFotos`).
+- **Formato de proyecto v0.5.0**: `"ajuste"` objeto JSON con claves `wbK`,
+  `lpSodio`, `lpMercurio`, `ev`, `brillo`, `contraste`, `ruido`.
+  `"ajustesFotos"` array de objetos `{indice, ajuste}` para overrides por foto.
+  Retrocompatible: `"wbCalor"` pre-0.5.0 se decodifica como fallback (valor
+  descartado).
+- **Test `test_imadjust`**: verificación de la cadena de procesamiento completa
+  (LP + WB + EV), monotonicidad de exposición, identidad por defecto, clamps.
+
+### Changed
+
+- **WB neutro = 11250 K (relativo)**: el valor medio del slider (11250 K) es el
+  punto de identidad. Bajar = más frío, subir = más cálido. Sin EXIF, la
+  referencia cae a 11250 K en `wbGains()`.
+- **Dock Imagen sincronizado con pestaña**: el dock cambia de modo (Fotos /
+  Vídeo) al cambiar de pestaña y sincroniza el ajuste de la foto actual.
+- **Alcance del dock Imagen**: en modo Fotos, combo "Todas las fotos" / "Solo
+  esta foto" para elegir si el ajuste se aplica a toda la secuencia o solo a la
+  foto seleccionada.
+- **`WhiteBalance` absorbido por `ImageAdjust`**: `wb::apply()` se reemplaza por
+  `img::apply()`, que aplica denoise → LP → WB → EV → contraste/brillo → clamp
+  en el orden correcto.
+- **Exportación de fotos/vídeo usa `ImageAdjust`**: `PhotoExportWorker::Settings`
+  y `VideoExportWorker::Settings` ahora llevan `adjust` (ImageAdjust) en lugar
+  de `whiteBalanceWarmth`. La exportación de fotos aplica el override por foto
+  cuando existe.
+- **Versión 0.5.0**: `project(AstroTracker VERSION 0.5.0)`.
+
+### Fixed
+
+- **Vídeo: visor izquierdo ahora muestra el frame raw** (antes el frame se
+  procesaba antes de mostrarlo en ambos visores, por lo que la diferencia raw /
+  procesado no era visible).
+- **Proyectos .atracker corruptos al reabrir**: la serialización ahora usa
+  `"ajuste"` como objeto JSON en lugar de `"wbCalor"` numérico suelto. Los
+  proyectos v0.4.x con `"wbCalor"` se decodifican como fallback ( WB identidad ).
+- **Búsqueda de resultado por nombre insensible a mayúsculas**: `indexOfResult`
+  ahora compara en minúsculas para evitar falsos negativos en nombres de archivo
+  con Mayúsculas/mayúsculas mezcladas.
+
 ## [0.4.1] - 2026-09-04
 
 ### Added
@@ -33,7 +94,8 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 - **Balance de blancos (WB) ajustable**: nuevo slider "WB" (-100..+100) tanto en
   la pestaña Fotos como en la pestaña Vídeo, con ajuste en tiempo real y
   aplicación automática en la exportación (JPG/PNG/MP4). Persiste en el proyecto
-  `.atracker`.
+  `.atracker`. *Nota: este control se reemplaza en v0.5.0 por el panel Kelvin
+  "Imagen" (ImageAdjustPanel).*
 - **WB en información EXIF**: el panel de información ahora muestra "Balance
   blancos" (Automático/Manual/Luz de día/Tungsteno/etc.) y "Temperatura" (K)
   cuando el EXIF contiene datos de balance de blancos.
