@@ -986,6 +986,10 @@ void PhotoPanel::runExportDialog(bool toVideo)
     centringLay->addWidget(centeredRadio);
     lay->addWidget(centringGroup);
 
+    auto* contentGroup = new QButtonGroup(&dlg);
+    contentGroup->addButton(directRadio);
+    contentGroup->addButton(centeredRadio);
+
     auto* fmtLabel = new QLabel(tr("Formato"), &dlg);
     lay->addWidget(fmtLabel);
     auto* jpgRadio = new QRadioButton(tr("Fotos JPG"), &dlg);
@@ -1001,6 +1005,11 @@ void PhotoPanel::runExportDialog(bool toVideo)
     lay->addWidget(jpgRadio);
     lay->addWidget(pngRadio);
     lay->addWidget(mp4Radio);
+
+    auto* formatGroup = new QButtonGroup(&dlg);
+    formatGroup->addButton(jpgRadio);
+    formatGroup->addButton(pngRadio);
+    formatGroup->addButton(mp4Radio);
 
     auto* resLabel = new QLabel(tr("Resolución"), &dlg);
     lay->addWidget(resLabel);
