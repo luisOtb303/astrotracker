@@ -66,6 +66,8 @@ add_executable(astrotracker WIN32
   src/common/Frame.h
   src/common/CircleF.h
   src/common/PhotoExifInfo.h
+  src/common/WhiteBalance.h
+  src/common/WhiteBalance.cpp
   src/video/IVideoReader.h
   src/video/FFmpegVideoReader.h
   src/video/FFmpegVideoReader.cpp

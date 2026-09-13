@@ -30,6 +30,13 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   `setDefaultAction` (QPushButton no lo soporta en Qt 6).
 - **Log de perfil y método**: el log de salida incluye el nombre del perfil activo
   y la cadena de métodos del perfil, además de los overrides por foto.
+- **Balance de blancos (WB) ajustable**: nuevo slider "WB" (-100..+100) tanto en
+  la pestaña Fotos como en la pestaña Vídeo, con ajuste en tiempo real y
+  aplicación automática en la exportación (JPG/PNG/MP4). Persiste en el proyecto
+  `.atracker`.
+- **WB en información EXIF**: el panel de información ahora muestra "Balance
+  blancos" (Automático/Manual/Luz de día/Tungsteno/etc.) y "Temperatura" (K)
+  cuando el EXIF contiene datos de balance de blancos.
 
 ### Changed
 

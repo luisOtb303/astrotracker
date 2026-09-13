@@ -103,6 +103,7 @@ private slots:
     void onPhotoProcessed(int64_t index);
     void onFrameReady(int64_t index, const cv::Mat& frame);
     void setDrawModeCircle(bool circle);
+    void onWbChanged(int value);
     void runTracking();
     void stopTracking();
     void onWorkerProgress(int done, int total);
@@ -133,6 +134,7 @@ private:
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
     static QPixmap toPixmap(const cv::Mat& bgr);
+    cv::Mat applyWb(const cv::Mat& src) const;
 
     PhotoSequenceReader reader_;
     PhotoFilmstrip* filmstrip_ = nullptr;
@@ -152,6 +154,10 @@ private:
     QAction* lockAction_ = nullptr;
     QAction* resetAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
+    // Balance de blancos: slider -100..+100, 0 = original.
+    QSlider* wbSlider_ = nullptr;
+    QLabel* wbLabel_ = nullptr;
+    int wbWarmth_ = 0;
     // Reproducción del timelapse (preview con selector de fps, bucle).
     QAction* playAction_ = nullptr;
     QComboBox* fpsCombo_ = nullptr;

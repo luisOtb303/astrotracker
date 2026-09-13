@@ -46,6 +46,7 @@ struct PhotoProjectPhotos {
     float seedX = 0.f;
     float seedY = 0.f;
     float seedRadius = 0.f;
+    int whiteBalanceWarmth = 0; // -100..+100
     std::vector<PhotoProjectPhotoResult> results;
 
     // Índice del resultado cuyo archivo coincide con name (-1 si no hay).
@@ -65,6 +66,7 @@ struct PhotoProjectVideo {
     int tracker = 0;            // 0 = Template, 1 = Centroid
     double smoothingAlpha = 0.3;
     int borderMode = 0;         // 0 = borde negro, 1 = réplica
+    int whiteBalanceWarmth = 0; // -100..+100
 };
 
 struct PhotoProject {

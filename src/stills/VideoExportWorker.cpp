@@ -1,6 +1,7 @@
 #include "stills/VideoExportWorker.h"
 
 #include "common/AppLog.h"
+#include "common/WhiteBalance.h"
 #include "processing/BorderHandler.h"
 #include "video/FFmpegVideoReader.h"
 #include "video/FFmpegVideoWriter.h"
@@ -149,6 +150,7 @@ void VideoExportWorker::run()
                                                : QStringLiteral(" → centrando")));
 
         cv::Mat work = toBgr8(frame.image);
+        work = wb::apply(work, settings_.whiteBalanceWarmth);
         cv::Mat out;
         if (!offsets_.empty() && frameIndex < static_cast<int64_t>(offsets_.size())) {
             const cv::Point2f off = offsets_[static_cast<size_t>(frameIndex)] * offScale;

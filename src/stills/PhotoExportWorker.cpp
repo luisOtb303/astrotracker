@@ -1,6 +1,7 @@
 #include "stills/PhotoExportWorker.h"
 
 #include "common/AppLog.h"
+#include "common/WhiteBalance.h"
 #include "processing/BorderHandler.h"
 #include "video/FFmpegVideoWriter.h"
 
@@ -185,6 +186,9 @@ void PhotoExportWorker::run()
                 continue;
             }
         }
+
+        // Balance de blancos antes del centrado/normalización.
+        work = wb::apply(work, settings_.whiteBalanceWarmth);
 
         // Centrado igual que el visor; las fotos sin resultado válido se
         // exportan sin desplazar (regla: nunca descartar frames).

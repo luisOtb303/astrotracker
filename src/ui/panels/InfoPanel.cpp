@@ -193,6 +193,10 @@ void InfoPanel::setFileAndExif(const PhotoFileInfo& file, const PhotoExifInfo& e
         lines << tr("ISO: %1").arg(exif.iso);
     if (exif.hasDate())
         lines << tr("Fecha disparo: %1").arg(QString::fromStdString(exif.date));
+    if (exif.hasWhiteBalance())
+        lines << tr("Balance blancos: %1").arg(QString::fromStdString(exif.whiteBalance));
+    if (exif.hasColorTemp())
+        lines << tr("Temperatura: %1 K").arg(exif.colorTempK);
     fileValueExtra_->setText(lines.isEmpty() ? tr("EXIF: sin datos")
                                              : lines.join('\n'));
 }

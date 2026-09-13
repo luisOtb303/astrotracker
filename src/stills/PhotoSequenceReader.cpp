@@ -343,8 +343,13 @@ PhotoExifInfo PhotoSequenceReader::exifInfo(int64_t idx) const
 
     const std::string path = paths_[static_cast<size_t>(idx)];
 
-    if (isRawExt(path))
-        return RawExifReader::readExif(path);
+    if (isRawExt(path)) {
+        PhotoExifInfo info = RawExifReader::readExif(path);
+#ifdef ASTROTRACKER_HAS_EXIV2
+        ExifReader::mergeWhiteBalance(path, info);
+#endif
+        return info;
+    }
 
 #ifdef ASTROTRACKER_HAS_EXIV2
     return ExifReader::readExif(path);

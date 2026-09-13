@@ -1,6 +1,7 @@
 #include "ui/PhotoPanel.h"
 
 #include "common/AppLog.h"
+#include "common/WhiteBalance.h"
 #include "ui/DebugDep.h"
 #include "processing/BorderHandler.h"
 #include "stills/PhotoExportWorker.h"
@@ -131,6 +132,17 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     borderCombo_->setToolTip(tr("Relleno de los bordes al centrar el visor"));
     tb->addWidget(borderCombo_);
     connect(borderCombo_, &QComboBox::currentIndexChanged, this, [this](int) { emit modified(); });
+
+    tb->addSeparator();
+    wbLabel_ = new QLabel(tr("WB"), this);
+    tb->addWidget(wbLabel_);
+    wbSlider_ = new QSlider(Qt::Horizontal, this);
+    wbSlider_->setRange(-100, 100);
+    wbSlider_->setValue(0);
+    wbSlider_->setFixedWidth(140);
+    wbSlider_->setToolTip(tr("Balance de blancos relativo al original (-100=frío, +100=cálido)"));
+    tb->addWidget(wbSlider_);
+    connect(wbSlider_, &QSlider::valueChanged, this, &PhotoPanel::onWbChanged);
 
     tb->addSeparator();
     prevAction_ = tb->addAction(tr("Anterior"), this, &PhotoPanel::showPrev);
@@ -576,6 +588,7 @@ void PhotoPanel::showCurrentSync()
         resultView_->setFrame(cv::Mat());
         return;
     }
+    frame = applyWb(frame);
     view_->setFrame(frame);
     updateViewerCircles(frame);
 
@@ -623,6 +636,7 @@ void PhotoPanel::onPlaybackTick()
     // para los RAW: leer y centrar es barato, idóneo para el preview en bucle.
     cv::Mat frame;
     if (reader_.readAt(current_, frame, displayMaxDim_) && !frame.empty()) {
+        frame = applyWb(frame);
         view_->setLoading(false);
         resultView_->setLoading(false);
         view_->setFrame(frame);
@@ -812,6 +826,20 @@ void PhotoPanel::setDrawModeCircle(bool circle)
 {
     drawCircleMode_ = circle;
     applyViewModes();
+}
+
+void PhotoPanel::onWbChanged(int value)
+{
+    if (value == wbWarmth_)
+        return;
+    wbWarmth_ = value;
+    emit modified();
+    showCurrent();
+}
+
+cv::Mat PhotoPanel::applyWb(const cv::Mat& src) const
+{
+    return wb::apply(src, wbWarmth_);
 }
 
 void PhotoPanel::applyCircle(const cv::Point2f& center, float radius)
@@ -1123,6 +1151,7 @@ void PhotoPanel::runExportDialog(bool toVideo)
     st.borderMode = borderCombo_->currentIndex();
     st.interp = interpCombo->currentData().toInt();
     st.normalizeBrightness = brightChk->isChecked();
+    st.whiteBalanceWarmth = wbWarmth_;
 
     // Si se elige "Centrado" pero no hay tracks, se fuerza Directo (regla:
     // nunca descartar frames; se conserva el frame tal cual).
@@ -1326,6 +1355,7 @@ PhotoProjectPhotos PhotoPanel::collectState() const
     d.seedX = seedCircle_.center.x;
     d.seedY = seedCircle_.center.y;
     d.seedRadius = seedCircle_.radius;
+    d.whiteBalanceWarmth = wbWarmth_;
 
     // Resultado disperso: solo se guardan fotos con círculo o con alguna marca
     // (bloqueada, fijada o excluida de la exportación).
@@ -1471,6 +1501,10 @@ bool PhotoPanel::applyState(const PhotoProjectPhotos& data, QString* error)
     current_ = std::min<int64_t>(std::max<int64_t>(data.currentIndex, 0),
                                  std::max<int64_t>(total - 1, 0));
 
+    wbWarmth_ = std::clamp(data.whiteBalanceWarmth, -100, 100);
+    if (wbSlider_)
+        wbSlider_->setValue(wbWarmth_);
+
     updateFilmstripBadges();
     updateTrackingUi();
     showCurrent();
@@ -1587,6 +1621,7 @@ void PhotoPanel::onPhotoProcessed(int64_t index)
     // si no, directa (va mostrando el avance del cálculo).
     cv::Mat frame;
     if (reader_.readAt(index, frame, displayMaxDim_) && !frame.empty()) {
+        frame = applyWb(frame);
         view_->setFrame(frame);
         if (analyzed_ && index < static_cast<int64_t>(tracks_.size())) {
             const DiscTrack& t = tracks_[static_cast<size_t>(index)];
@@ -1610,8 +1645,9 @@ void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
     applyViewModes();
     view_->setLoading(false);
     resultView_->setLoading(false);
-    view_->setFrame(frame);
-    updateViewerCircles(frame);
+    const cv::Mat shown = applyWb(frame);
+    view_->setFrame(shown);
+    updateViewerCircles(shown);
     // El EXIF y la info del fichero también se actualizan al cargar por el
     // loader (la ruta síncrona showCurrentSync se usa solo sin loader).
     emitFileInfo(index);

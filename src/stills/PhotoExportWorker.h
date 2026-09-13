@@ -29,6 +29,7 @@ public:
         int borderMode = 0;      // 0 = negro, 1 = réplica
         int interp = 2;          // fotogramas intermedios por transición (MP4)
         bool normalizeBrightness = true; // suaviza el parpadeo entre fotos (MP4)
+        int whiteBalanceWarmth = 0; // -100..+100
         QString outDir;          // imágenes
         QString outFile;         // mp4
     };

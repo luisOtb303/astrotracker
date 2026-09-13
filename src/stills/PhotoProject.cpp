@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <algorithm>
 
 namespace {
 
@@ -67,6 +68,7 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
         s.insert(QStringLiteral("radio"), static_cast<double>(p.seedRadius));
         o.insert(QStringLiteral("semilla"), s);
     }
+    o.insert(QStringLiteral("wbCalor"), p.whiteBalanceWarmth);
 
     QJsonArray results;
     for (const PhotoProjectPhotoResult& r : p.results) {
@@ -109,6 +111,7 @@ QJsonObject encodeVideo(const PhotoProjectVideo& v)
     o.insert(QStringLiteral("tracker"), v.tracker);
     o.insert(QStringLiteral("suavizado"), v.smoothingAlpha);
     o.insert(QStringLiteral("borde"), v.borderMode);
+    o.insert(QStringLiteral("wbCalor"), v.whiteBalanceWarmth);
     return o;
 }
 
@@ -170,6 +173,8 @@ void decodePhotos(const QJsonObject& o, PhotoProjectPhotos& p)
         p.seedY = static_cast<float>(readDouble(seed.value(QLatin1String("y")), 0.0));
         p.seedRadius = static_cast<float>(readDouble(seed.value(QLatin1String("radio")), 0.0));
     }
+    p.whiteBalanceWarmth = std::clamp(
+        readInt(o.value(QLatin1String("wbCalor")), 0), -100, 100);
 
     const auto results = o.value(QLatin1String("resultados")).toArray();
     p.results.reserve(static_cast<size_t>(results.size()));
@@ -216,6 +221,8 @@ void decodeVideo(const QJsonObject& o, PhotoProjectVideo& v)
     v.tracker = readInt(o.value(QLatin1String("tracker")));
     v.smoothingAlpha = readDouble(o.value(QLatin1String("suavizado")), 0.3);
     v.borderMode = readInt(o.value(QLatin1String("borde")));
+    v.whiteBalanceWarmth = std::clamp(
+        readInt(o.value(QLatin1String("wbCalor")), 0), -100, 100);
 }
 
 } // namespace

@@ -9,4 +9,7 @@ class ExifReader
 {
 public:
     static PhotoExifInfo readExif(const std::string& path);
+    // Rellena solo whiteBalance y colorTempK de un fichero (útil para enriquecer
+    // la info de RAW vía exiv2).
+    static void mergeWhiteBalance(const std::string& path, PhotoExifInfo& info);
 };

@@ -14,6 +14,8 @@ struct PhotoExifInfo
     float shutterSec = 0;   // 0.002 (1/500)
     int iso = 0;            // 3200
     std::string date;        // "2026-03-15T22:47:00"
+    std::string whiteBalance; // "Automático", "Luz de día", "Tungsteno"…
+    int colorTempK = 0;     // Kelvin (0 = desconocido)
     int width = 0;          // 5472
     int height = 0;         // 3648
 
@@ -24,6 +26,8 @@ struct PhotoExifInfo
     bool hasCamera() const { return !camera.empty(); }
     bool hasLens() const { return !lens.empty(); }
     bool hasDate() const { return !date.empty(); }
+    bool hasWhiteBalance() const { return !whiteBalance.empty(); }
+    bool hasColorTemp() const { return colorTempK > 0; }
 
     bool isEmpty() const
     {

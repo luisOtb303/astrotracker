@@ -27,6 +27,7 @@ class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QGroupBox;
+class QSlider;
 struct Frame;
 
 // New UI components
@@ -61,6 +62,7 @@ private slots:
     void onFitFrame();
     void stopProcessing();
     void togglePreview(bool enabled);
+    void onWbChanged(int value);
     void startExportVideo();
     void startExportPhotos();
     void runExportDialog(bool toVideo);
@@ -168,6 +170,10 @@ private:
     QLabel* photoStatusLabel_ = nullptr;
     QPushButton* clearOverrideBtn_ = nullptr;
     QGroupBox* videoGroup_ = nullptr;
+
+    QSlider* wbSlider_ = nullptr;
+    QLabel* wbLabel_ = nullptr;
+    int wbWarmth_ = 0;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;
