@@ -162,8 +162,12 @@ void PhotoExportWorker::run()
                                    selection_[static_cast<size_t>(i)]);
         if (!selected)
             continue;
-        AppLog::info(QStringLiteral("procesando %1 → centrando")
-                         .arg(QString::fromStdString(reader.fileName(i))));
+        const bool hasTrack = i < static_cast<int64_t>(tracks_.size()) &&
+                              tracks_[static_cast<size_t>(i)].radius > 0.f;
+        AppLog::info(QStringLiteral("procesando %1 → %2")
+                         .arg(QString::fromStdString(reader.fileName(i)))
+                         .arg(hasTrack ? QStringLiteral("centrando")
+                                       : QStringLiteral("directo")));
 
         cv::Mat work;
         double scale = 1.0;
@@ -184,15 +188,16 @@ void PhotoExportWorker::run()
 
         // Centrado igual que el visor; las fotos sin resultado válido se
         // exportan sin desplazar (regla: nunca descartar frames).
-        cv::Point2f center(0.f, 0.f);
-        float radius = 0.f;
-        if (i < static_cast<int64_t>(tracks_.size()) &&
-            tracks_[static_cast<size_t>(i)].radius > 0.f) {
-            center = tracks_[static_cast<size_t>(i)].center * static_cast<float>(scale);
-            radius = tracks_[static_cast<size_t>(i)].radius * static_cast<float>(scale);
+        cv::Mat out;
+        if (hasTrack) {
+            const cv::Point2f center = tracks_[static_cast<size_t>(i)].center *
+                                       static_cast<float>(scale);
+            const cv::Point2f offset(work.cols / 2.0f - center.x,
+                                     work.rows / 2.0f - center.y);
+            out = BorderHandler::apply(work, offset, mode);
+        } else {
+            out = work.clone();
         }
-        const cv::Point2f offset(work.cols / 2.0f - center.x, work.rows / 2.0f - center.y);
-        cv::Mat out = BorderHandler::apply(work, offset, mode);
 
         // Normalización de brillo: todas las fotos al brillo medio de la
         // primera, para que la transición no "parpadee". Con tope de ganancia:

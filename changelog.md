@@ -36,6 +36,16 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 - **Calcular siempre activo**: el botón "Calcular automáticamente" en Fotos ya no
   requiere un círculo semilla previo; el flujo es: abrir secuencia → pulsar
   Calcular → auto-detección → confirmar → cálculo foto a foto.
+- **Radios "Directo/Centrado" siempre seleccionables**: ambos botones están
+  habilitados siempre; si no hay datos de seguimiento, Centrado se exporta como
+  Directo con un aviso en el log.
+
+### Fixed
+
+- **Exportación "Directo" desplazaba cada frame**: en `PhotoExportWorker`, cuando
+  no había track válido (modo Directo o foto sin detección), el offset se
+  calculaba con `center=(0,0)` → desplazamiento de media imagen en lugar de
+  cero. Ahora se exporta sin desplazar (offset 0) cuando no hay track válido.
 
 ## [0.4.0] - 2026-09-03
 

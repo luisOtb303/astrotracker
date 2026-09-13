@@ -976,12 +976,10 @@ void PhotoPanel::runExportDialog(bool toVideo)
                                "(no se aplica ningún desplazamiento)"));
     centeredRadio->setToolTip(tr("Desplaza cada foto para dejar el disco fijo "
                                  "en el centro"));
-    centeredRadio->setEnabled(canCenter);
     centeredRadio->setChecked(canCenter);
-    if (canCenter)
-        directRadio->setChecked(false);
-    else
-        directRadio->setChecked(true);
+    directRadio->setChecked(!canCenter);
+    directRadio->setAutoExclusive(false);
+    centeredRadio->setAutoExclusive(false);
     centringLay->addWidget(directRadio);
     centringLay->addWidget(centeredRadio);
     lay->addWidget(centringGroup);
@@ -999,6 +997,9 @@ void PhotoPanel::runExportDialog(bool toVideo)
         mp4Radio->setChecked(true);
     else
         jpgRadio->setChecked(true);
+    jpgRadio->setAutoExclusive(false);
+    pngRadio->setAutoExclusive(false);
+    mp4Radio->setAutoExclusive(false);
     jpgRadio->setToolTip(tr("Una imagen por foto"));
     pngRadio->setToolTip(tr("Una imagen por foto (sin pérdida)"));
     mp4Radio->setToolTip(tr("Un vídeo H.264 (MP4) con todas las fotos"));
@@ -1123,11 +1124,15 @@ void PhotoPanel::runExportDialog(bool toVideo)
     st.interp = interpCombo->currentData().toInt();
     st.normalizeBrightness = brightChk->isChecked();
 
-    // Si se elige "Directo", se exporta sin centrar: se pasa la lista de tracks
-    // vacía para que el worker no aplique ningún desplazamiento (regla: nunca
-    // descartar frames, se conserva el frame tal cual).
-    const std::vector<DiscTrack> exportTracks =
-        centeredRadio->isChecked() ? tracks_ : std::vector<DiscTrack>{};
+    // Si se elige "Centrado" pero no hay tracks, se fuerza Directo (regla:
+    // nunca descartar frames; se conserva el frame tal cual).
+    std::vector<DiscTrack> exportTracks;
+    if (centeredRadio->isChecked() && !tracks_.empty()) {
+        exportTracks = tracks_;
+    } else if (centeredRadio->isChecked()) {
+        AppLog::warn(tr("Centrado seleccionado pero sin datos de seguimiento; "
+                        "se exporta directo"));
+    }
 
     QStringList paths;
     paths.reserve(static_cast<int>(reader_.count()));

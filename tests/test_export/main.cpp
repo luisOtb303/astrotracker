@@ -1,10 +1,11 @@
-// Test de regresión del centrado en la exportación de fotos.
+// Test de regresión del centrado/directo en la exportación de fotos.
 //
 // Genera fotos sintéticas con un disco brillante en posiciones conocidas y
 // bien separadas del centro, ejecuta el PhotoExportWorker real (imágenes JPG a
 // resolución Visor y vídeo MP4 FHD con fotogramas intermedios) y comprueba que
 // el centroide del disco queda en el centro del frame en TODAS las salidas,
-// incluidos los fotogramas interpolados.
+// incluidos los fotogramas interpolados. Verifica también el modo "directo"
+// (tracks vacíos) para PhotoExportWorker y VideoExportWorker.
 
 #include "common/Frame.h"
 #include "stills/PhotoExportWorker.h"
@@ -181,6 +182,41 @@ int main(int argc, char** argv)
             char msg[64];
             std::snprintf(msg, sizeof msg, "MP4: %d frames, se esperaban %d", frames, expected);
             fail(__FILE__, __LINE__, msg);
+        }
+    }
+
+    // --- PhotoExportWorker directo (sin centrar): tracks vacíos → disco en su
+    // posición original, no desplazado.
+    {
+        const fs::path outDir = root / "direct";
+        fs::create_directories(outDir, ec);
+
+        PhotoExportWorker::Settings st;
+        st.format = PhotoExportWorker::Format::Jpg;
+        st.resolution = PhotoExportWorker::Resolution::Visor;
+        st.outDir = QString::fromStdString(outDir.string());
+
+        PhotoExportWorker worker(pathsQt, {}, 1600, st);
+        worker.run();
+
+        for (int i = 0; i < N; ++i) {
+            char name[32];
+            std::snprintf(name, sizeof name, "centrada_%04d.jpg", i);
+            const cv::Mat out = cv::imread((outDir / name).string());
+            if (out.empty()) {
+                fail(__FILE__, __LINE__, "no se leyó el JPG directo " + std::string(name));
+                continue;
+            }
+            const cv::Point2f c = centroid(out);
+            const cv::Point2f expected = srcCenter[i] * scale;
+            if (std::abs(c.x - expected.x) >= 3.f ||
+                std::abs(c.y - expected.y) >= 3.f) {
+                char msg[128];
+                std::snprintf(msg, sizeof msg,
+                              "Directo %d: disco en (%.1f, %.1f), esperado (%.1f, %.1f)",
+                              i, c.x, c.y, expected.x, expected.y);
+                fail(__FILE__, __LINE__, msg);
+            }
         }
     }
 

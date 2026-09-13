@@ -969,12 +969,10 @@ void MainWindow::runExportDialog(bool toVideo)
     directRadio->setToolTip(tr("Re-codifica el vídeo tal cual, sin desplazar"));
     centeredRadio->setToolTip(tr("Desplaza cada fotograma para dejar el objeto "
                                  "fijo en el centro"));
-    centeredRadio->setEnabled(canCenter);
     centeredRadio->setChecked(canCenter);
-    if (canCenter)
-        directRadio->setChecked(false);
-    else
-        directRadio->setChecked(true);
+    directRadio->setChecked(!canCenter);
+    directRadio->setAutoExclusive(false);
+    centeredRadio->setAutoExclusive(false);
     centringLay->addWidget(directRadio);
     centringLay->addWidget(centeredRadio);
     lay->addWidget(centringGroup);
@@ -992,6 +990,9 @@ void MainWindow::runExportDialog(bool toVideo)
         mp4Radio->setChecked(true);
     else
         jpgRadio->setChecked(true);
+    jpgRadio->setAutoExclusive(false);
+    pngRadio->setAutoExclusive(false);
+    mp4Radio->setAutoExclusive(false);
     jpgRadio->setToolTip(tr("Un imagen por fotograma del vídeo"));
     pngRadio->setToolTip(tr("Un imagen por fotograma (sin pérdida)"));
     mp4Radio->setToolTip(tr("Un vídeo H.264 (MP4) con todos los fotogramas"));
@@ -1118,7 +1119,11 @@ void MainWindow::runExportDialog(bool toVideo)
     st.normalizeBrightness = brightChk->isChecked();
 
     const std::vector<cv::Point2f> exportOffsets =
-        centeredRadio->isChecked() ? offsets_ : std::vector<cv::Point2f>{};
+        (centeredRadio->isChecked() && !offsets_.empty()) ? offsets_
+        : std::vector<cv::Point2f>{};
+    if (centeredRadio->isChecked() && offsets_.empty())
+        AppLog::warn(tr("Centrado seleccionado pero sin datos de seguimiento; "
+                        "se exporta directo"));
 
     videoExportWorker_ = new VideoExportWorker(inPath_, exportOffsets, st, this);
     connect(videoExportWorker_, &VideoExportWorker::progress, this,
