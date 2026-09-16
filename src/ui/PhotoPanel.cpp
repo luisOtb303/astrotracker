@@ -268,6 +268,12 @@ PhotoPanel::PhotoPanel(QWidget* parent)
             settings.value("Photos/profile").toString().toLatin1().constData(),
             saved))
         trackingProfile_ = trackingProfileFor(saved);
+
+    // Timer de debounce para refrescar la vista en tiempo real al cambiar ajustes.
+    adjustDebounce_ = new QTimer(this);
+    adjustDebounce_->setSingleShot(true);
+    adjustDebounce_->setInterval(60);
+    connect(adjustDebounce_, &QTimer::timeout, this, &PhotoPanel::refreshView);
 }
 
 PhotoPanel::~PhotoPanel() = default;
@@ -395,6 +401,8 @@ void PhotoPanel::clearSession()
     photoAdjusts_.clear();
     detectedKelvin_ = 0;
     scopePerPhoto_ = false;
+    rawFrame_ = cv::Mat();
+    rawFrameIndex_ = -1;
     if (lockAction_)
         lockAction_->setChecked(false);
     indexLabel_->setText(tr("Foto: - / -"));
@@ -580,8 +588,12 @@ void PhotoPanel::showCurrentSync()
     if (!reader_.readAt(current_, frame, displayMaxDim_)) {
         view_->setFrame(cv::Mat());
         resultView_->setFrame(cv::Mat());
+        rawFrame_ = cv::Mat();
+        rawFrameIndex_ = -1;
         return;
     }
+    rawFrame_ = frame;
+    rawFrameIndex_ = current_;
     view_->setFrame(frame);
     updateViewerCircles(frame);
     syncPhotoAdjust();
@@ -629,6 +641,8 @@ void PhotoPanel::onPlaybackTick()
     // para los RAW: leer y centrar es barato, idóneo para el preview en bucle.
     cv::Mat frame;
     if (reader_.readAt(current_, frame, displayMaxDim_) && !frame.empty()) {
+        rawFrame_ = frame;
+        rawFrameIndex_ = current_;
         view_->setLoading(false);
         resultView_->setLoading(false);
         view_->setFrame(frame);
@@ -838,7 +852,7 @@ void PhotoPanel::onImageAdjustChanged(const ImageAdjust& adj)
         globalAdjust_ = adj;
         photoAdjusts_.clear();
     }
-    syncPhotoAdjust();
+    adjustDebounce_->start();
 }
 
 cv::Mat PhotoPanel::applyImage(const cv::Mat& src) const
@@ -857,6 +871,7 @@ void PhotoPanel::onScopeChanged(bool perPhoto)
 {
     scopePerPhoto_ = perPhoto;
     syncPhotoAdjust();
+    refreshView();
 }
 
 void PhotoPanel::syncPhotoAdjust()
@@ -878,11 +893,39 @@ void PhotoPanel::resetImageAdjust()
     globalAdjust_ = ImageAdjust{};
     photoAdjusts_.clear();
     syncPhotoAdjust();
+    refreshView();
 }
 
 void PhotoPanel::setDetectedKelvin(int kelvin)
 {
     detectedKelvin_ = kelvin;
+}
+
+void PhotoPanel::refreshView()
+{
+    if (!reader_.isOpen())
+        return;
+    if (loadingView_)
+        return;
+    if (rawFrameIndex_ != current_ || rawFrame_.empty()) {
+        showCurrentSync();
+        return;
+    }
+    const ImageAdjust adj = effectiveAdjust();
+    depLog(QStringLiteral("Aplicando ajuste foto %1: wbK=%2 ev=%3 brillo=%4 "
+                          "contraste=%5 sodio=%6 mercurio=%7 ruido=%8")
+               .arg(current_ + 1)
+               .arg(adj.wbKelvin)
+               .arg(adj.exposureEv)
+               .arg(adj.brightness)
+               .arg(adj.contrast)
+               .arg(adj.lpSodium)
+               .arg(adj.lpMercury)
+               .arg(adj.denoise));
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    view_->setFrame(rawFrame_);
+    updateViewerCircles(rawFrame_);
+    QApplication::restoreOverrideCursor();
 }
 
 void PhotoPanel::setImageAdjustPanel(ImageAdjustPanel* panel)
@@ -1693,6 +1736,8 @@ void PhotoPanel::onFrameReady(int64_t index, const cv::Mat& frame)
     applyViewModes();
     view_->setLoading(false);
     resultView_->setLoading(false);
+    rawFrame_ = frame;
+    rawFrameIndex_ = index;
     view_->setFrame(frame);
     updateViewerCircles(frame);
     // El EXIF y la info del fichero también se actualizan al cargar por el

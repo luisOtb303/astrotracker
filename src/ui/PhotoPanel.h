@@ -151,6 +151,7 @@ private:
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
     static QPixmap toPixmap(const cv::Mat& bgr);
     cv::Mat applyImage(const cv::Mat& src) const;
+    void refreshView();
 
     PhotoSequenceReader reader_;
     PhotoFilmstrip* filmstrip_ = nullptr;
@@ -171,11 +172,15 @@ private:
     QAction* resetAction_ = nullptr;
     QComboBox* borderCombo_ = nullptr;
     ImageAdjustPanel* imgPanel_ = nullptr;
+    QTimer* adjustDebounce_ = nullptr;
     // Balance de blancos y ajuste de imagen global + overrides por foto.
     ImageAdjust globalAdjust_;
     std::map<int, ImageAdjust> photoAdjusts_;
     int detectedKelvin_ = 0;
     bool scopePerPhoto_ = false;
+    // Caché del frame raw actual para refresh sin re-leer disco.
+    cv::Mat rawFrame_;
+    int64_t rawFrameIndex_ = -1;
     // Reproducción del timelapse (preview con selector de fps, bucle).
     QAction* playAction_ = nullptr;
     QComboBox* fpsCombo_ = nullptr;

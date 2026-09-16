@@ -262,8 +262,9 @@ void ImageAdjustPanel::setAdjust(const ImageAdjust& adj)
     lastState_ = adj;
 
     suppressUndo_ = true;
-    wbSlider_->setValue(adj.wbKelvin);
-    wbSpin_->setValue(adj.wbKelvin);
+    const int wb = adj.wbKelvin ? adj.wbKelvin : ImageAdjustLimits::kDefaultKelvin;
+    wbSlider_->setValue(wb);
+    wbSpin_->setValue(wb);
     sodiumSlider_->setValue(adj.lpSodium);
     mercurySlider_->setValue(adj.lpMercury);
     denoiseSlider_->setValue(adj.denoise);
@@ -368,7 +369,7 @@ void ImageAdjustPanel::onResetClicked()
     undoDeque_.clear();
     undoBtn_->setEnabled(false);
     suppressUndo_ = true;
-    wbSlider_->setValue(0);
+    wbSlider_->setValue(ImageAdjustLimits::kDefaultKelvin);
     wbSpin_->setValue(ImageAdjustLimits::kDefaultKelvin);
     sodiumSlider_->setValue(0);
     mercurySlider_->setValue(0);
