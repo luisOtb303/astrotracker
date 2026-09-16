@@ -166,6 +166,29 @@ void MainWindow::setupUi()
         populateRecentsMenu(recentsMenu);
     });
     fileMenu->addSeparator();
+
+    QMenu* exportMenu = fileMenu->addMenu(tr("&Exportar"));
+    menuExportVideoAction_ = exportMenu->addAction(tr("Exportar &vídeo..."));
+    menuExportVideoAction_->setToolTip(tr("Guardar el vídeo como MP4 (centrado si se ha "
+                                          "calculado, directo si no)"));
+    connect(menuExportVideoAction_, &QAction::triggered, this, [this] {
+        if (tabs_->currentIndex() == 0)
+            startExportVideo();
+        else
+            photosPanel_->startExportVideo();
+    });
+    menuExportPhotosAction_ = exportMenu->addAction(tr("Exportar &fotos..."));
+    menuExportPhotosAction_->setToolTip(tr("Extraer los fotogramas del vídeo como imágenes "
+                                           "PNG/JPG (centradas si se han calculado, directas "
+                                           "si no)"));
+    connect(menuExportPhotosAction_, &QAction::triggered, this, [this] {
+        if (tabs_->currentIndex() == 0)
+            startExportPhotos();
+        else
+            photosPanel_->startExportPhotos();
+    });
+
+    fileMenu->addSeparator();
     fileMenu->addAction(tr("&Salir"), this, &QWidget::close);
 
     QMenu* viewMenu = menuBar()->addMenu(tr("&Ver"));
@@ -374,6 +397,8 @@ void MainWindow::setupUi()
         progressBar_->setValue(done);
         progressBar_->setVisible(true);
     });
+    connect(photosPanel_, &PhotoPanel::exportReadyChanged,
+            this, &MainWindow::updateExportMenus);
 
     progressBar_ = new QProgressBar(this);
     progressBar_->setVisible(false);
@@ -1359,6 +1384,7 @@ void MainWindow::updateStabilizationUi()
     exportVideoAction_->setEnabled(canExport);
     exportPhotosAction_->setEnabled(canExport);
     previewAction_->setEnabled(!offsets_.empty());
+    updateExportMenus();
 }
 
 void MainWindow::setBusy(bool busy)
@@ -1371,6 +1397,7 @@ void MainWindow::setBusy(bool busy)
     stopAction_->setEnabled(busy);
     playAction_->setEnabled(!busy && reader_);
     refreshProjectUi();
+    updateExportMenus();
 }
 
 void MainWindow::updateTransportUi()
@@ -1384,6 +1411,17 @@ void MainWindow::updateTransportUi()
     // Grupo "Vídeo" del dock: solo en pestaña Vídeo.
     if (videoGroup_)
         videoGroup_->setVisible(onVideoTab);
+
+    updateExportMenus();
+}
+
+void MainWindow::updateExportMenus()
+{
+    const bool onVideoTab = tabs_->currentIndex() == 0;
+    bool videoReady = reader_ != nullptr && worker_ == nullptr && videoExportWorker_ == nullptr;
+    bool photosReady = photosPanel_->isOpen() && !photosPanel_->isBusy();
+    menuExportVideoAction_->setEnabled(onVideoTab ? videoReady : photosReady);
+    menuExportPhotosAction_->setEnabled(onVideoTab ? videoReady : photosReady);
 }
 
 void MainWindow::restoreDocks()
@@ -1439,7 +1477,16 @@ void MainWindow::installShortcuts()
                     togglePreview(!previewEnabled_);
                     break;
                 case ShortcutManager::Action::StartExport:
-                    startExportVideo();
+                    if (tabs_->currentIndex() == 0)
+                        startExportVideo();
+                    else
+                        photosPanel_->startExportVideo();
+                    break;
+                case ShortcutManager::Action::StartExportPhotos:
+                    if (tabs_->currentIndex() == 0)
+                        startExportPhotos();
+                    else
+                        photosPanel_->startExportPhotos();
                     break;
                 case ShortcutManager::Action::ToggleInfo:
                     infoDock_->setVisible(!infoDock_->isVisible());
@@ -1464,6 +1511,9 @@ void MainWindow::installShortcuts()
                     break;
                 }
             });
+
+    menuExportVideoAction_->setShortcut(shortcuts_->shortcut(ShortcutManager::Action::StartExport));
+    menuExportPhotosAction_->setShortcut(shortcuts_->shortcut(ShortcutManager::Action::StartExportPhotos));
 }
 
 void MainWindow::updatePanelMode()

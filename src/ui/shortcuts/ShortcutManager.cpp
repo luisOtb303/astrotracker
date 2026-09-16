@@ -21,6 +21,7 @@ ShortcutManager::ShortcutManager(QWidget* parent)
     defaults_[Action::ToggleFilmstrip] = QKeySequence(Qt::CTRL | Qt::Key_F);
     defaults_[Action::StartAnalyze] = QKeySequence(Qt::Key_Return);
     defaults_[Action::StartExport] = QKeySequence(Qt::CTRL | Qt::Key_E);
+    defaults_[Action::StartExportPhotos] = QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E);
     defaults_[Action::TogglePreview] = QKeySequence(Qt::Key_P);
 }
 

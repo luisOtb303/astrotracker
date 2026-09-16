@@ -26,6 +26,7 @@ public:
         ToggleFilmstrip,
         StartAnalyze,
         StartExport,
+        StartExportPhotos,
         TogglePreview,
         NextFrame,
         PrevFrame,

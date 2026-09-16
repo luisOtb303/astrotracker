@@ -99,6 +99,12 @@ signals:
     void photoMetaChanged(const PhotoFileInfo& file, const PhotoExifInfo& exif);
     // Posición actual de la secuencia (navegación o preview) para el timeline.
     void photoPositionChanged(int64_t index);
+    // La disponibilidad de exportación ha cambiado (abrir/cerrar/cálculo).
+    void exportReadyChanged(bool ready);
+
+public slots:
+    void startExportVideo();
+    void startExportPhotos();
 
 private slots:
     void onItemActivated(QListWidgetItem* item);
@@ -112,8 +118,6 @@ private slots:
     void onCircleSelected(const QPointF& center, double radius);
     void onFitDisc();
     void onLockToggle(bool locked);
-    void startExportVideo();
-    void startExportPhotos();
     void runExportDialog(bool toVideo);
     void startNew();
     void onFilmstripChanged(QListWidgetItem* item);

@@ -1353,6 +1353,7 @@ void PhotoPanel::updateTrackingUi()
     exportPhotosAction_->setEnabled(ready);
     lockAction_->setEnabled(ready && analyzed_);
     resetAction_->setEnabled(ready);
+    emit exportReadyChanged(ready);
 }
 
 bool PhotoPanel::isBusy() const

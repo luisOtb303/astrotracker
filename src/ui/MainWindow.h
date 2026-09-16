@@ -98,6 +98,7 @@ private:
     void updateTrackCircle(int64_t frameIndex);
     void updateTransportUi();
     void updateStabilizationUi();
+    void updateExportMenus();
     void updatePanelMode();
     void updateTimelineForPhotos(int64_t index = -1);
     void restoreDocks();
@@ -157,6 +158,8 @@ private:
     QAction* closeProjectAction_ = nullptr;
     QAction* saveProjectAction_ = nullptr;
     QAction* saveProjectAsAction_ = nullptr;
+    QAction* menuExportVideoAction_ = nullptr;
+    QAction* menuExportPhotosAction_ = nullptr;
     QString projectPath_;
     bool projectDirty_ = false;
     QStringList recentProjects_;
