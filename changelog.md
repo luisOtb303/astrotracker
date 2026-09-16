@@ -5,7 +5,7 @@ Todas las modificaciones notables de AstroTracker se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
-## [0.5.0] - 2026-09-13
+## [0.5.0] - 2026-09-16
 
 ### Added
 
