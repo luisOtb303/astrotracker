@@ -5,6 +5,14 @@ Todas las modificaciones notables de AstroTracker se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
+## [Unreleased]
+
+### Added
+
+- **Asociación de archivos `.atracker`**: el instalador NSIS registra la asociación
+  con Windows para que el doble click abra directamente el proyecto en AstroTracker.
+  Se desinstala limpiamente.
+
 ## [0.5.0] - 2026-09-16
 
 ### Added

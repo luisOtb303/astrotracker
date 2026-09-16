@@ -730,6 +730,14 @@ void MainWindow::openFile()
     openPath(path);
 }
 
+void MainWindow::openExternalFile(const QString& path)
+{
+    if (path.endsWith(QStringLiteral(".atracker"), Qt::CaseInsensitive))
+        openProject(path);
+    else
+        openPath(path);
+}
+
 void MainWindow::openPath(const QString& path)
 {
     auto reader = std::make_unique<FFmpegVideoReader>();

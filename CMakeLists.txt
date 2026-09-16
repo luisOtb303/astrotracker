@@ -303,5 +303,15 @@ set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/resources/favicon/app.ico")
 set(CPACK_NSIS_INSTALLED_ICON_NAME "astrotracker.exe")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 
+# Asociación de archivos .atracker (HKLM Software\Classes).
+set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
+    "WriteRegStr HKLM \"Software\\Classes\\.atracker\" \"\" \"AstroTracker.Project\" \\\n\
+     WriteRegStr HKLM \"Software\\Classes\\AstroTracker.Project\" \"\" \"Proyecto de AstroTracker\" \\\n\
+     WriteRegStr HKLM \"Software\\Classes\\AstroTracker.Project\\DefaultIcon\" \"\" \"$INSTDIR\\astrotracker.exe,0\" \\\n\
+     WriteRegStr HKLM \"Software\\Classes\\AstroTracker.Project\\shell\\open\\command\" \"\" \"\\\"$INSTDIR\\astrotracker.exe\\\" \\\"%1\\\"\"")
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
+    "DeleteRegKey HKLM \"Software\\Classes\\AstroTracker.Project\" \\\n\
+     DeleteRegKey HKLM \"Software\\Classes\\.atracker\"")
+
 set(CPACK_VERBATIM_VARIABLES ON)
 include(CPack)

@@ -47,6 +47,8 @@ public:
     ~MainWindow() override;
 
     void openPath(const QString& path);
+    // Abre un archivo externo (doble click, CLI): .atracker → proyecto, resto → vídeo.
+    void openExternalFile(const QString& path);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
