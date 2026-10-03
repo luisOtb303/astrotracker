@@ -52,6 +52,11 @@ public:
 signals:
     void roiSelected(const QRect& rect);
     void circleSelected(const QPointF& center, double radius);
+    // Navegación por teclado. Se emite solo con el visor enfocado, de forma que
+    // los sliders del dock de ajustes siguen recibiendo sus propias flechas.
+    void stepForwardRequested();
+    void stepBackwardRequested();
+    void playPauseRequested();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -59,6 +64,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     void leaveEvent(QEvent* event) override;
 
 private:

@@ -402,6 +402,29 @@ target_compile_definitions(test_adjustworker PRIVATE NOMINMAX WIN32_LEAN_AND_MEA
 target_link_libraries(test_adjustworker PRIVATE Qt6::Core ${OpenCV_LIBS})
 
 add_test(NAME test_adjustworker COMMAND test_adjustworker)
+
+# Reparto de atajos: con modificador = QShortcut global; tecla pelada = por foco.
+# Regresión de los sliders del dock, a los que las flechas globales robaban.
+
+add_executable(test_shortcuts test_shortcuts/main.cpp
+  ../src/ui/shortcuts/ShortcutManager.h
+  ../src/ui/shortcuts/ShortcutManager.cpp)
+
+target_include_directories(test_shortcuts PRIVATE ../src)
+target_compile_definitions(test_shortcuts PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_shortcuts PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+
+# Usa QGuiApplication (QKeySequence es de QtGui): necesita plataforma gráfica,
+# pero offscreen y sin ventana visible. Qt6_DIR apunta a <qt>/lib/cmake/Qt6,
+# así que los plugins (incluido platforms/qoffscreen.dll) están tres niveles
+# arriba.
+add_test(NAME test_shortcuts COMMAND test_shortcuts)
+if(Qt6_DIR)
+  get_filename_component(_qt_plugins "${Qt6_DIR}/../../.." ABSOLUTE)
+  set_tests_properties(test_shortcuts PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_PLUGIN_PATH=${_qt_plugins}/plugins")
+endif()
+
 # Tests sintéticos de los detectores de disco (KnownRadius, Centroid,
 # PhaseCorrelation) y de la fusión por soporte radial.
 

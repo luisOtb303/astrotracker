@@ -44,8 +44,17 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   historial de deshacer; antes la respuesta se notaba lenta por el denoise.
 - Los archivos exportados ya no se pisan entre sí: el nombre incluye la fecha y
   hora de la exportación junto al nombre del origen.
-
-## [0.5.0] - 2026-09-16
+- **Tocar un deslizador ya no mueve el vídeo.** El refresco de la vista se
+  confundía con un avance de fotograma: al cambiar cualquier ajuste, el modo de
+  borde o la vista previa se leía el frame *siguiente* del vídeo. Ahora hay dos
+  caminos distintos, uno que avanza y otro que solo repinta lo que ya está
+  cargado.
+- **Las flechas ya no se comen los deslizadores.** Los atajos de navegación
+  estaban registrados como atajos globales de ventana, así que se activaban
+  antes de que la tecla llegara al control que tenía el foco: al pulsar un
+  deslizador y usar las flechas cambiaba el vídeo en lugar del valor. Ahora las
+  flechas avanzan el fotograma solo cuando el visor está enfocado, y el resto de
+  teclas sueltas funcionan según el foco.
 
 ## [0.5.0] - 2026-09-16
 

@@ -40,7 +40,18 @@ public:
     // Register all shortcuts on a target widget.
     void install(QWidget* target);
 
-signals:
+    // ¿Esta acción se registra como atajo global (QShortcut) o se atiende por
+    // el foco del widget? Solo las combinaciones con modificador son globales.
+    //
+    // Motivo: un QShortcut con WidgetWithChildrenShortcut consume la tecla antes
+    // de que la reciba el widget con el foco, así que los sliders del dock de
+    // ajustes perdían las flechas y el vídeo avanzaba de frame en su lugar.
+    static bool isGlobalShortcut(Action action);
+
+// Las teclas sin modificador (flechas, espacio, S, J, L, P, Return) no se
+    // emiten desde aquí: se gestionan por foco en el visor y en la ventana, para
+    // no robarle las flechas a los sliders del dock de ajustes.
+    signals:
     void triggered(Action action);
 
 private:

@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QKeyEvent>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,10 @@ VideoView::VideoView(QWidget* parent)
 {
     setMinimumSize(320, 240);
     setMouseTracking(true);
+    // Necesario para que el visor reciba el foco por clic y las flechas de
+    // navegación funcionen solo cuando lo tiene. Antes estas teclas eran
+    // QShortcut globales y se comían también las de los sliders.
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 void VideoView::setFrame(const cv::Mat& frame)
@@ -276,6 +281,8 @@ void VideoView::paintEvent(QPaintEvent*)
 
 void VideoView::mousePressEvent(QMouseEvent* event)
 {
+    // El clic da el foco al visor para que las flechas naveguen por el vídeo.
+    setFocus(Qt::MouseFocusReason);
     if (image_.isNull())
         return;
 
@@ -457,6 +464,27 @@ void VideoView::wheelEvent(QWheelEvent* event)
     if (delta == 0)
         return;
     zoomAt(event->position().toPoint(), delta > 0 ? 1.25 : 1.0 / 1.25);
+}
+
+void VideoView::keyPressEvent(QKeyEvent* event)
+{
+    // Navegación por teclado: solo con el visor enfocado. Si el foco está en un
+    // slider u otro control, la tecla la atiende ese widget (lo que antes no
+    // ocurría porque el QShortcut global se la llevaba antes).
+    switch (event->key()) {
+    case Qt::Key_Left:
+        emit stepBackwardRequested();
+        return;
+    case Qt::Key_Right:
+        emit stepForwardRequested();
+        return;
+    case Qt::Key_Space:
+        emit playPauseRequested();
+        return;
+    default:
+        break;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void VideoView::leaveEvent(QEvent* event)

@@ -41,10 +41,12 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QDesktopServices>
+#include <QAbstractSpinBox>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileInfo>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QProgressBar>
 #include <QRadioButton>
@@ -330,7 +332,7 @@ void MainWindow::setupUi()
         if (!reader_ || val == currentUs_ / 1000)
             return;
         reader_->seekToUs(static_cast<int64_t>(val) * 1000);
-        showCurrentFrame();
+        advanceToNextFrame();
     });
 
     setCentralWidget(centralWidget);
@@ -361,7 +363,7 @@ void MainWindow::setupUi()
                 if (tabs_->currentIndex() == 0) {
                     if (adj == videoAdjust_) return;
                     videoAdjust_ = adj;
-                    showCurrentFrame();
+                    refreshCurrentFrame();
                 } else {
                     photosPanel_->onImageAdjustChanged(adj);
                 }
@@ -369,7 +371,7 @@ void MainWindow::setupUi()
     connect(imgPanel_, &ImageAdjustPanel::resetRequested, this, [this]() {
         if (tabs_->currentIndex() == 0) {
             videoAdjust_ = ImageAdjust{};
-            showCurrentFrame();
+            refreshCurrentFrame();
         } else {
             photosPanel_->resetImageAdjust();
         }
@@ -525,7 +527,7 @@ void MainWindow::setupUi()
     videoLay->addWidget(smoothSpin_);
 
     connect(borderCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int) { showCurrentFrame(); });
+            this, [this](int) { refreshCurrentFrame(); });
 
     dockLay->addWidget(photosGroup);
     dockLay->addWidget(videoGroup_);
@@ -635,7 +637,17 @@ QWidget* MainWindow::createVideoPage()
     resultBox->addWidget(resTitle);
     resultView_ = new VideoView(central);
     resultView_->setRoiEnabled(false);
+    resultView_->setPanEnabled(true);
     resultBox->addWidget(resultView_, 1);
+
+    // Navegación por teclado: las flechas y el espacio se atienden en el visor
+    // enfocado, no con atajos globales, para no quitárselas a los sliders del
+    // dock de ajustes.
+    for (VideoView* v : {view_, resultView_}) {
+        connect(v, &VideoView::stepForwardRequested, this, &MainWindow::stepForward);
+        connect(v, &VideoView::stepBackwardRequested, this, &MainWindow::stepBackward);
+        connect(v, &VideoView::playPauseRequested, this, &MainWindow::playPause);
+    }
 
     viewers->addLayout(sourceBox, 1);
     viewers->addLayout(resultBox, 1);
@@ -790,7 +802,7 @@ void MainWindow::openPath(const QString& path)
     timeline_->setEnabled(true);
     playAction_->setEnabled(true);
 
-    showCurrentFrame();
+    advanceToNextFrame();
     updateTransportUi();
     updateStabilizationUi();
     updatePanelMode();
@@ -805,11 +817,24 @@ void MainWindow::openPath(const QString& path)
             .arg(totalFrames_));
 }
 
-void MainWindow::showCurrentFrame()
+void MainWindow::advanceToNextFrame()
 {
     Frame frame;
     if (!reader_ || !reader_->readNext(frame))
         return;
+    presentFrame(frame);
+}
+
+void MainWindow::refreshCurrentFrame()
+{
+    // Sin decoder no hay nada que repintar (p. ej. al cambiar ajustes antes de
+    // abrir un vídeo).
+    if (!reader_ || currentFrameImage_.empty())
+        return;
+    Frame frame;
+    frame.image = currentFrameImage_;
+    frame.index = currentFrameIndex_;
+    frame.ptsUs = currentUs_;
     presentFrame(frame);
 }
 
@@ -911,7 +936,7 @@ void MainWindow::stop()
     playAction_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
     if (reader_) {
         reader_->seekToUs(0);
-        showCurrentFrame();
+        advanceToNextFrame();
     }
 }
 
@@ -919,7 +944,7 @@ void MainWindow::stepForward()
 {
     if (!reader_)
         return;
-    showCurrentFrame();
+    advanceToNextFrame();
 }
 
 void MainWindow::stepBackward()
@@ -928,7 +953,7 @@ void MainWindow::stepBackward()
         return;
     const int64_t target = std::max<int64_t>(0, currentUs_ - stepUs_);
     reader_->seekToUs(target);
-    showCurrentFrame();
+    advanceToNextFrame();
 }
 
 void MainWindow::onTimer()
@@ -1062,7 +1087,7 @@ void MainWindow::togglePreview(bool enabled)
     view_->setRoiEnabled(!enabled);
     if (enabled)
         statusBar()->showMessage(tr("Vista previa: se muestran los frames estabilizados"), 5000);
-    showCurrentFrame();
+    refreshCurrentFrame();
 }
 
 void MainWindow::startExportVideo()
@@ -1391,7 +1416,7 @@ void MainWindow::onAnalyzeFinished(bool ok, const QString& error, QVector<QPoint
         previewEnabled_ = true;
         previewAction_->setChecked(true);
         view_->setRoiEnabled(false);
-        showCurrentFrame();
+        advanceToNextFrame();
         statusBar()->showMessage(
             tr("Seguimiento: %1 frames, %2 válidos, %3% confianza. "
                "El objeto queda fijo y centrado en el visor \"Centrado\"")
@@ -1532,6 +1557,56 @@ void MainWindow::restoreDocks()
         addDockWidget(Qt::LeftDockWidgetArea, imgDock_);
     if (logDock_)
         resizeDocks({logDock_}, {160}, Qt::Vertical);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* event)
+{
+    // Estas acciones ya no son atajos globales (ver ShortcutManager::install), así
+    // que se atienden por foco. Aquí solo se recogen las teclas "peladas" cuando
+    // el widget con el foco NO las usa, para que no se pierdan con el foco en un
+    // panel. Si el foco está en un control que las consume, se deja pasar.
+    QWidget* fw = focusWidget();
+    const bool focusConsumesText =
+        qobject_cast<QLineEdit*>(fw) || qobject_cast<QTextEdit*>(fw)
+        || qobject_cast<QPlainTextEdit*>(fw) || qobject_cast<QAbstractSpinBox*>(fw);
+
+    switch (event->key()) {
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        // Return también activa el botón con el foco (Centrar, Deshacer); si no
+        // hay ninguno con el foco, arranca el análisis.
+        if (!qobject_cast<QAbstractButton*>(fw))
+            startAnalyze();
+        return;
+    case Qt::Key_Space:
+        if (qobject_cast<QAbstractButton*>(fw))
+            break;  // que el botón reciba el espacio y se pulse
+        playPause();
+        return;
+    case Qt::Key_S:
+        if (focusConsumesText)
+            break;
+        stop();
+        return;
+    case Qt::Key_J:
+        if (focusConsumesText)
+            break;
+        stepBackward();
+        return;
+    case Qt::Key_L:
+        if (focusConsumesText)
+            break;
+        stepForward();
+        return;
+    case Qt::Key_P:
+        if (focusConsumesText)
+            break;
+        togglePreview(!previewEnabled_);
+        return;
+    default:
+        break;
+    }
+    QMainWindow::keyPressEvent(event);
 }
 
 void MainWindow::installShortcuts()
@@ -1786,7 +1861,7 @@ void MainWindow::applyVideo(const PhotoProjectVideo& v)
 
     if (v.positionUs > 0 && v.positionUs < totalUs_) {
         reader_->seekToUs(v.positionUs);
-        showCurrentFrame();
+        advanceToNextFrame();
     }
     updateStabilizationUi();
     statusBar()->showMessage(

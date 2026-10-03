@@ -53,6 +53,9 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    // Atrapa Espacio/Return/S/J/L/P cuando el foco está en un control que no los
+    // usa (botones, campos de texto), para no lanzar la acción global.
+    void keyPressEvent(QKeyEvent* event) override;
 
 private slots:
     void openFile();
@@ -96,7 +99,12 @@ private:
     void openPhotos();
     void populateRecentsMenu(QMenu* menu);
     void rememberVideoPath(const QString& path);
-    void showCurrentFrame();
+    // Lee el frame SIGUIENTE del vídeo (avance secuencial del decoder).
+    void advanceToNextFrame();
+    // Repinta el frame ya cargado, sin tocar el decoder. Es lo que necesitan los
+    // cambios de ajuste, el modo de borde o el toggle de vista previa: si usaran
+    // advanceToNextFrame() el vídeo avanzaría un frame con cada interacción.
+    void refreshCurrentFrame();
     void presentFrame(const Frame& frame);
     void requestVideoAdjustPreview();
     void onVideoAdjusted(const cv::Mat& out, quint64 seq);
