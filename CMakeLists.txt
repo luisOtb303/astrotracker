@@ -257,19 +257,40 @@ if(MSVC)
   endif()
 endif()
 
-# Copiar DLLs de FFmpeg junto al ejecutable
+# Copiar DLLs de FFmpeg junto al ejecutable.
+# El if evita que `copy_if_different` reciba solo el destino (imprime el usage de
+# CMake y devuelve error), que es lo que pasaba si el glob no encontraba nada.
 file(GLOB FFMPEG_DLLS "${FFMPEG_ROOT}/bin/*.dll")
-add_custom_command(TARGET astrotracker POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FFMPEG_DLLS} $<TARGET_FILE_DIR:astrotracker>
-  COMMENT "Copiando DLLs de FFmpeg")
+if(FFMPEG_DLLS)
+  add_custom_command(TARGET astrotracker POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FFMPEG_DLLS} $<TARGET_FILE_DIR:astrotracker>
+    COMMENT "Copiando DLLs de FFmpeg")
+else()
+  message(WARNING "No se encontraron DLLs de FFmpeg en '${FFMPEG_ROOT}/bin'. "
+                  "AstroTracker no arrancará sin ellas.")
+endif()
 
 # Copiar DLL de OpenCV junto al ejecutable (solo la variante Release; la DLL
 # debug opencv_world*d.dll no debe salir del árbol de build).
-file(GLOB OPENCV_DLLS "${OpenCV_DIR}/x64/vc16/bin/opencv_world[0-9]*.dll")
+#
+# OpenCV_DIR apunta al directorio 'lib' del paquete de Windows
+# (<root>/x64/vc16/lib), así que las DLL están en el 'bin' hermano, NO en
+# '${OpenCV_DIR}/x64/vc16/bin'. Esa ruta duplicada era la que dejaba la lista
+# vacía y rompía el POST_BUILD.
+get_filename_component(_opencv_lib_parent "${OpenCV_DIR}" DIRECTORY)
+file(GLOB OPENCV_DLLS
+  "${OpenCV_DIR}/../bin/opencv_world[0-9]*.dll"
+  "${_opencv_lib_parent}/bin/opencv_world[0-9]*.dll"
+  "${OpenCV_DIR}/../x64/vc16/bin/opencv_world[0-9]*.dll")
 list(FILTER OPENCV_DLLS EXCLUDE REGEX "opencv_world[0-9]+d\.dll$")
-add_custom_command(TARGET astrotracker POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OPENCV_DLLS} $<TARGET_FILE_DIR:astrotracker>
-  COMMENT "Copiando DLLs de OpenCV")
+if(OPENCV_DLLS)
+  add_custom_command(TARGET astrotracker POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OPENCV_DLLS} $<TARGET_FILE_DIR:astrotracker>
+    COMMENT "Copiando DLLs de OpenCV")
+else()
+  message(WARNING "No se encontró opencv_world*.dll para '${OpenCV_DIR}'. "
+                  "AstroTracker no arrancará sin ella.")
+endif()
 
 enable_testing()
 add_subdirectory(tests)
