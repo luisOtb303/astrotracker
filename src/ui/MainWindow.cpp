@@ -841,12 +841,11 @@ void MainWindow::refreshCurrentFrame()
 void MainWindow::requestVideoAdjustPreview()
 {
     ensureVideoAdjustWorker();
-    ++videoAdjustSeq_;
     if (currentFrameImage_.empty())
         return;
     videoAdjustWorker_->setSource(currentFrameImage_);
     if (videoAdjustWorker_->request(videoAdjust_)) {
-        // El workerRespondera con el frame ya ajustado.
+        // El worker responderá con el frame ya ajustado.
         return;
     }
     // Ajuste identidad: se muestra el frame tal cual, sin pasar por el hilo.
@@ -855,8 +854,9 @@ void MainWindow::requestVideoAdjustPreview()
 
 void MainWindow::onVideoAdjusted(const cv::Mat& out, quint64 seq)
 {
-    // Resultado que ya no corresponde a los ajustes vigentes: descartar.
-    if (seq != videoAdjustSeq_)
+    // El contador es el del worker: un seq distinto significa que estos
+    // ajustes ya no son los vigentes (o que el frame ya no es este).
+    if (seq != videoAdjustWorker_->currentSeq())
         return;
     resultView_->setFrame(displayFrame(out, currentFrameIndex_));
 }

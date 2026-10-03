@@ -234,6 +234,70 @@ int main(int argc, char** argv)
         w.shutdown();
     }
 
+    // 9. Petición identidad y reset() también avanzan la secuencia. Es lo que
+    //    invalida un resultado que estuviera en vuelo, y lo que permite que el
+    //    llamante descarte lo obsoleto comparando con currentSeq().
+    {
+        AdjustWorker w;
+        w.start();
+        w.setSource(makeImage());
+
+        const quint64 seq0 = w.currentSeq();
+        expect(!w.request(ImageAdjust{}), "identidad: request() devuelve false");
+        expect(w.currentSeq() > seq0,
+               "identidad: el seq avanza igualmente (invalida lo en vuelo)");
+        expect(w.waitIdle(2000),
+               "identidad: el worker sincroniza appliedSeq_ y queda libre");
+
+        ImageAdjust adj;
+        adj.exposureEv = 10;
+        expect(w.request(adj), "exposición: request() devuelve true");
+        const quint64 seq1 = w.currentSeq();
+        expect(w.waitIdle(5000), "exposición: el worker termina");
+
+        w.reset();
+        expect(w.currentSeq() > seq1,
+               "reset(): el seq avanza (invalida el resultado en vuelo)");
+        expect(w.waitIdle(2000), "reset(): el worker queda libre");
+        w.shutdown();
+    }
+
+    // 10. Tras una identidad, un ajuste real llega con el seq vigente y se
+    //     aplica de verdad. Es la secuencia que dispara el fallo del panel de
+    //     imagen: al abrir el vídeo hay una petición identidad, y si el seq no
+    //     queda alineado el resultado se descarta y no se ve ningún cambio.
+    {
+        AdjustWorker w;
+        w.start();
+        Collector c;
+        QObject::connect(&w, &AdjustWorker::adjusted,
+                         &c, [&c](const cv::Mat& out, quint64 seq) {
+                             c.results.push_back(out);
+                             c.seqs.push_back(seq);
+                         });
+        w.setSource(makeImage());
+
+        // Primer frame: ajustes neutros (lo que pasa al abrir un vídeo).
+        expect(!w.request(ImageAdjust{}), "frame inicial: ajuste identidad");
+        expect(w.waitIdle(2000), "frame inicial: el worker queda libre");
+
+        // El usuario mueve la exposición.
+        ImageAdjust adj;
+        adj.exposureEv = 10;
+        expect(w.request(adj), "exposición: request() devuelve true");
+        expect(w.waitIdle(5000), "exposición: el worker termina");
+        c.spin(1);
+
+        expect(c.count() >= 1, "exposición: llega el frame ajustado");
+        if (c.count() >= 1) {
+            expect(c.seqs.last() == w.currentSeq(),
+                   "el seq emitido coincide con el vigente");
+            expect(cv::mean(c.results.last())[0] > 128.0,
+                   "la exposición se aplica de verdad, no solo llega el frame");
+        }
+        w.shutdown();
+    }
+
     if (failures == 0)
         std::printf("test_adjustworker: OK\n");
     else

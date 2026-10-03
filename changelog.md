@@ -44,6 +44,12 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
   historial de deshacer; antes la respuesta se notaba lenta por el denoise.
 - Los archivos exportados ya no se pisan entre sí: el nombre incluye la fecha y
   hora de la exportación junto al nombre del origen.
+- **Los ajustes de imagen se vuelven a ver sobre el vídeo.** Ninguno de los
+  controles (exposición, brillo, contraste, balance de blancos, sodio, mercurio,
+  ruido) hacía nada: el visor descartaba todos los resultados del worker de
+  ajustes por un contador de peticiones desincronizado. Al abrir un vídeo ya
+  había una petición de ajustes neutros, que no avanzaba el contador del worker,
+  así que a partir de ahí ninguna secuencia voltaba a coincidir.
 - **Tocar un deslizador ya no mueve el vídeo.** El refresco de la vista se
   confundía con un avance de fotograma: al cambiar cualquier ajuste, el modo de
   borde o la vista previa se leía el frame *siguiente* del vídeo. Ahora hay dos

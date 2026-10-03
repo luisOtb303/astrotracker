@@ -901,16 +901,16 @@ void PhotoPanel::requestAdjustPreview()
     const ImageAdjust adj = effectiveAdjust();
     adjustWorker_->setSource(rawFrame_);
     if (adjustWorker_->request(adj))
-        ++adjustSeq_;
-    else
-        // Ajuste identidad: mostrar el crudo ya mismo, sin esperar al hilo.
-        onAdjustedFrame(rawFrame_, adjustSeq_);
+        return; // El hilo responde con onAdjustedFrame().
+    // Ajuste identidad: mostrar el crudo ya mismo, sin esperar al hilo.
+    onAdjustedFrame(rawFrame_, adjustWorker_->currentSeq());
 }
 
 void PhotoPanel::onAdjustedFrame(const cv::Mat& out, quint64 seq)
 {
-    // Resultado de un ajuste que ya no es el vigente: se ignora.
-    if (seq != adjustSeq_)
+    // El contador es el del worker: un seq distinto significa que estos
+    // ajustes ya no son los vigentes (o que la foto ya no es esta).
+    if (seq != adjustWorker_->currentSeq())
         return;
     processedFrame_ = out;
     updateViewerCircles(rawFrame_);

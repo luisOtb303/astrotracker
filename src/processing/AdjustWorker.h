@@ -33,11 +33,24 @@ public:
 
     // Pide reprocesar con estos ajustes. Devuelve false si el ajuste es
     // identidad y no hay nada que hacer.
+    //
+    // El número de petición es del worker, no del llamante: para descartar
+    // resultados obsoletos hay que compararlo con currentSeq(), nunca con un
+    // contador propio. Dos contadores se desincronizan en cuanto hay una
+    // petición identidad (que no avanza el del worker) y a partir de ahi se
+    // descarta todo en silencio.
     bool request(const ImageAdjust& adj);
 
     // Descarta ajustes pendientes (cambiar de foto, valores nuevos). El hilo
     // sigue vivo para la siguiente petición.
     void reset();
+
+    // Número de la última petición. Es el seq que Bringe adjusted(), así que
+    // un resultado con otro seq ya no corresponde a lo vigente.
+    //
+    // request() y reset() lo avanzan SIEMPRE, también para el ajuste identidad:
+    // es lo que invalida un resultado que estuviera en vuelo.
+    quint64 currentSeq();
 
     // Detiene el hilo y espera a que termine. Obligatorio antes de destruirlo:
     // un QThread en ejecución no se puede destruir.

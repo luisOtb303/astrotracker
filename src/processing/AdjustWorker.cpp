@@ -35,7 +35,16 @@ void AdjustWorker::reset()
     QMutexLocker lock(&mutex_);
     hasRequested_ = false;
     requested_ = ImageAdjust{};
+    // También avanza la secuencia: si había un resultado en vuelo, hay que
+    // invalidarlo o se pintaría un ajuste que ya no está vigente.
+    ++requestSeq_;
     cond_.wakeAll();
+}
+
+quint64 AdjustWorker::currentSeq()
+{
+    QMutexLocker lock(&mutex_);
+    return requestSeq_;
 }
 
 void AdjustWorker::shutdown()
@@ -69,6 +78,14 @@ void AdjustWorker::run()
             cond_.wait(&mutex_, 20);
         if (stop_.load())
             break;
+
+        // reset() (petición identidad incluida) también avanza requestSeq_, así
+        // que puede haber trabajo pendiente sin nada que aplicar: en ese caso
+        // solo hay que sincronizar appliedSeq_ para no reprocesar.
+        if (!hasRequested_) {
+            appliedSeq_ = requestSeq_;
+            continue;
+        }
 
         // Coalescing: si se pedimos algo mas mientras trabajabamos, hasRequested_
         // lo recoge el siguiente ciclo y solo se procesa la ultima peticion.

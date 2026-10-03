@@ -199,7 +199,6 @@ private:
     bool openFolderAfterExport_ = false;
     // Worker de ajustes del visor derecho: el denoise no debe congelar la UI.
     AdjustWorker* videoAdjustWorker_ = nullptr;
-    quint64 videoAdjustSeq_ = 0;
     int64_t currentFrameIndex_ = 0;
 
     std::unique_ptr<IVideoReader> reader_;

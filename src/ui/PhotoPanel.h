@@ -231,9 +231,6 @@ private:
     PhotoExportWorker* exportWorker_ = nullptr;
     PhotoFrameLoader* loader_ = nullptr;
     AdjustWorker* adjustWorker_ = nullptr;
-    // Secuencia del ultimo ajuste pedido, para descartar frames de un worker
-    // que ya no corresponden a los valores actuales.
-    quint64 adjustSeq_ = 0;
 
     int64_t current_ = 0;
     int displayMaxDim_ = 1600;
