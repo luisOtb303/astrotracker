@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 
 #include "common/AppLog.h"
+#include "common/ExportNaming.h"
 #include "common/ImageAdjust.h"
 #include "ui/panels/ImageAdjustPanel.h"
 #include "ui/DebugDep.h"
@@ -39,6 +40,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -54,6 +56,7 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QTime>
 #include <opencv2/imgproc.hpp>
@@ -84,7 +87,6 @@ MainWindow::MainWindow(QWidget* parent)
                            .arg(exif.hasCamera())
                            .arg(QString::fromStdString(file.type)));
                 infoPanel_->setFileAndExif(file, exif);
-                imgPanel_->setDetectedKelvin(exif.colorTempK);
                 photosPanel_->syncPhotoAdjust();
             });
     connect(photosPanel_, &PhotoPanel::photoPositionChanged, this,
@@ -115,7 +117,11 @@ MainWindow::MainWindow(QWidget* parent)
         restoreState(state);
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow()
+{
+    if (videoAdjustWorker_)
+        videoAdjustWorker_->shutdown();
+}
 
 void MainWindow::setupUi()
 {
@@ -807,14 +813,47 @@ void MainWindow::showCurrentFrame()
     presentFrame(frame);
 }
 
+void MainWindow::requestVideoAdjustPreview()
+{
+    ensureVideoAdjustWorker();
+    ++videoAdjustSeq_;
+    if (currentFrameImage_.empty())
+        return;
+    videoAdjustWorker_->setSource(currentFrameImage_);
+    if (videoAdjustWorker_->request(videoAdjust_)) {
+        // El workerRespondera con el frame ya ajustado.
+        return;
+    }
+    // Ajuste identidad: se muestra el frame tal cual, sin pasar por el hilo.
+    resultView_->setFrame(displayFrame(currentFrameImage_, currentFrameIndex_));
+}
+
+void MainWindow::onVideoAdjusted(const cv::Mat& out, quint64 seq)
+{
+    // Resultado que ya no corresponde a los ajustes vigentes: descartar.
+    if (seq != videoAdjustSeq_)
+        return;
+    resultView_->setFrame(displayFrame(out, currentFrameIndex_));
+}
+
+void MainWindow::ensureVideoAdjustWorker()
+{
+    if (videoAdjustWorker_)
+        return;
+    videoAdjustWorker_ = new AdjustWorker(this);
+    connect(videoAdjustWorker_, &AdjustWorker::adjusted,
+            this, &MainWindow::onVideoAdjusted);
+    videoAdjustWorker_->start();
+}
+
 void MainWindow::presentFrame(const Frame& frame)
 {
     currentUs_ = frame.ptsUs;
+    currentFrameIndex_ = frame.index;
     if (!frame.image.empty())
         currentFrameImage_ = frame.image.clone();
     view_->setFrame(frame.image);
-    const cv::Mat shown = img::apply(frame.image, videoAdjust_);
-    resultView_->setFrame(displayFrame(shown, frame.index));
+    requestVideoAdjustPreview();
     updateTrackCircle(frame.index);
 
     const int ms = static_cast<int>(currentUs_ / 1000);
@@ -1138,15 +1177,39 @@ void MainWindow::runExportDialog(bool toVideo)
     smoothLay->addWidget(brightChk);
     lay->addWidget(smoothGroup);
 
+    // Destino por defecto: junto al vídeo de origen, con timestamp y su nombre.
+    const QString srcFolder = QFileInfo(inPath_).absolutePath();
+    const auto defaultStem = [&] {
+        return export_naming::prefix(inPath_, false);
+    };
+    const auto defaultDest = [&]() {
+        if (mp4Radio->isChecked())
+            return QDir(srcFolder).filePath(defaultStem() + QStringLiteral(".mp4"));
+        return srcFolder;
+    };
+
     auto* destLabel = new QLabel(tr("Destino"), &dlg);
     lay->addWidget(destLabel);
     auto* destRow = new QHBoxLayout();
     auto* destEdit = new QLineEdit(&dlg);
-    destEdit->setReadOnly(true);
+    destEdit->setReadOnly(false);
     auto* browseBtn = new QPushButton(tr("Examinar..."), &dlg);
     destRow->addWidget(destEdit, 1);
     destRow->addWidget(browseBtn);
     lay->addLayout(destRow);
+
+    auto* defaultBtn = new QPushButton(tr("Usar carpeta del origen"), &dlg);
+    defaultBtn->setToolTip(tr("Vuelve a la carpeta del vídeo, con el nombre de "
+                              "origen y la fecha y hora actuales"));
+    lay->addWidget(defaultBtn);
+
+    auto* openChk = new QCheckBox(tr("Abrir la carpeta al terminar"), &dlg);
+    openChk->setChecked(false);
+    openChk->setToolTip(tr("Al terminar la exportación, abre en el explorador la "
+                           "carpeta donde se han guardado los archivos"));
+    lay->addWidget(openChk);
+
+    destEdit->setText(defaultDest());
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     buttons->button(QDialogButtonBox::Ok)->setText(tr("Exportar"));
@@ -1155,8 +1218,8 @@ void MainWindow::runExportDialog(bool toVideo)
     const auto chooseDest = [&]() {
         if (mp4Radio->isChecked()) {
             const QString f = QFileDialog::getSaveFileName(
-                this, tr("Vídeo de salida"), inPath_ + QStringLiteral(".centrado.mp4"),
-                tr("MP4 (*.mp4)"));
+                this, tr("Vídeo de salida"),
+                QFileInfo(destEdit->text()).absolutePath(), tr("MP4 (*.mp4)"));
             if (!f.isEmpty())
                 destEdit->setText(f);
         } else {
@@ -1167,6 +1230,10 @@ void MainWindow::runExportDialog(bool toVideo)
         }
     };
     connect(browseBtn, &QPushButton::clicked, &dlg, chooseDest);
+    connect(defaultBtn, &QPushButton::clicked, &dlg,
+            [&] { destEdit->setText(defaultDest()); });
+    connect(mp4Radio, &QRadioButton::toggled, &dlg,
+            [&](bool on) { if (on) destEdit->setText(defaultDest()); });
     const auto updateFpsEnabled = [&]() {
         const bool isMp4 = mp4Radio->isChecked();
         fpsCombo->setEnabled(isMp4);
@@ -1188,7 +1255,9 @@ void MainWindow::runExportDialog(bool toVideo)
     VideoExportWorker::Settings st;
     if (mp4Radio->isChecked()) {
         st.format = VideoExportWorker::Format::Mp4;
-        st.outFile = destEdit->text();
+        st.outFile = QFileInfo(destEdit->text()).suffix().isEmpty()
+                         ? destEdit->text() + QStringLiteral(".mp4")
+                         : destEdit->text();
         bool okFps = false;
         const double fps = fpsCombo->currentText().toDouble(&okFps);
         st.fps = (okFps && fps > 0.0) ? fps : 10.0;
@@ -1197,6 +1266,11 @@ void MainWindow::runExportDialog(bool toVideo)
                                           : VideoExportWorker::Format::Jpg;
         st.outDir = destEdit->text();
     }
+    st.baseName = export_naming::prefix(inPath_, false);
+    openFolderAfterExport_ = openChk->isChecked();
+    lastExportFolder_ = mp4Radio->isChecked()
+                            ? QFileInfo(st.outFile).absolutePath()
+                            : QFileInfo(st.outDir).absolutePath();
     st.resolution = static_cast<VideoExportWorker::Resolution>(resCombo->currentData().toInt());
     st.borderMode = borderCombo_->currentIndex();
     st.interp = interpCombo->currentData().toInt();
@@ -1262,10 +1336,16 @@ void MainWindow::onVideoExportFinished(bool ok, const QString& error, int frames
     videoExportWorker_ = nullptr;
     setBusy(false);
     progressBar_->setVisible(false);
-    if (ok)
-        statusBar()->showMessage(tr("Exportado: %1 (%2 elementos)").arg(inPath_).arg(frames));
-    else
+    if (ok) {
+        statusBar()->showMessage(
+            tr("Exportado: %1 (%2 elementos)").arg(inPath_).arg(frames));
+        // Solo si el usuario lo pidió: abrir el explorador es interrumpir.
+        if (openFolderAfterExport_ && !lastExportFolder_.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(lastExportFolder_));
+    } else {
         statusBar()->showMessage(tr("Error al exportar: %1").arg(error));
+    }
+    lastExportFolder_.clear();
     updateStabilizationUi();
 }
 

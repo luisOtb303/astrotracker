@@ -23,6 +23,7 @@ class VideoView;
 class PhotoTrackWorker;
 class PhotoExportWorker;
 class PhotoFrameLoader;
+class AdjustWorker;
 class ImageAdjustPanel;
 class PhotoFilmstrip;
 
@@ -67,8 +68,6 @@ public:
     void openRecentFolder(const QString& dir);
     QStringList recentFolders() const { return recentFolders_; }
 
-    // Señales de la foto actual (para el dock Imagen).
-    void setDetectedKelvin(int kelvin);
     // Ajuste efectivo para la foto actual (override o global).
     ImageAdjust effectiveAdjust() const;
     // Restablece los ajustes de imagen a los valores por defecto.
@@ -148,13 +147,15 @@ private:
     void showCurrentSync();
     void ensureLoader();
     void updateViewerCircles(const cv::Mat& frame);
+    void ensureAdjustWorker();
+    void requestAdjustPreview();
+    void onAdjustedFrame(const cv::Mat& out, quint64 seq);
     void emitFileInfo(int64_t index);
     bool autoDetectSeed();
 
     cv::Mat centeredFrame(const cv::Mat& frame, const DiscTrack& track);
     cv::Mat centeredFrame(const cv::Mat& frame, const CircleF& circle);
     static QPixmap toPixmap(const cv::Mat& bgr);
-    cv::Mat applyImage(const cv::Mat& src) const;
     void refreshView();
 
     PhotoSequenceReader reader_;
@@ -180,10 +181,11 @@ private:
     // Balance de blancos y ajuste de imagen global + overrides por foto.
     ImageAdjust globalAdjust_;
     std::map<int, ImageAdjust> photoAdjusts_;
-    int detectedKelvin_ = 0;
     bool scopePerPhoto_ = false;
-    // Caché del frame raw actual para refresh sin re-leer disco.
+    // Cache del frame raw actual para refresh sin re-leer disco.
     cv::Mat rawFrame_;
+    // Ultimo frame ya ajustado por el worker; vacio = usar el crudo tal cual.
+    cv::Mat processedFrame_;
     int64_t rawFrameIndex_ = -1;
     // Reproducción del timelapse (preview con selector de fps, bucle).
     QAction* playAction_ = nullptr;
@@ -206,6 +208,10 @@ private:
     std::vector<bool> exportSelection_;
     // Origen de la secuencia actual, para guardarla en el proyecto.
     QString sourceFolder_;
+    // Carpeta donde se guardó la última exportación, para poder abrirla al
+    // terminar si el usuario lo pidió en el diálogo.
+    QString lastExportFolder_;
+    bool openFolderAfterExport_ = false;
     QStringList sourceFiles_;
     // Perfil de seguimiento y overrides de método por foto (dock Seguimiento).
     TrackingProfile trackingProfile_{trackingProfileFor(ObjectProfile::Auto)};
@@ -224,6 +230,10 @@ private:
     PhotoTrackWorker* worker_ = nullptr;
     PhotoExportWorker* exportWorker_ = nullptr;
     PhotoFrameLoader* loader_ = nullptr;
+    AdjustWorker* adjustWorker_ = nullptr;
+    // Secuencia del ultimo ajuste pedido, para descartar frames de un worker
+    // que ya no corresponden a los valores actuales.
+    quint64 adjustSeq_ = 0;
 
     int64_t current_ = 0;
     int displayMaxDim_ = 1600;

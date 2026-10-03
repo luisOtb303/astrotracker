@@ -30,6 +30,16 @@ public:
     void zoomOut();
     bool isZoomed() const { return zoom_ != 1.0; }
 
+    // Pan con el botón izquierdo. Se usa en el visor de la foto ya ajustada,
+    // donde el izquierdo no dibuja nada; el visor original (con ROI o círculo)
+    // lo deja desactivado para no quitarle el ratón a esas herramientas.
+    void setPanEnabled(bool enabled);
+    bool isPanEnabled() const { return panEnabled_; }
+
+    // Zoom con anclaje: mantiene fijo el punto del visor bajo el cursor, para
+    // poder acercar una detalle sin perderlo de vista.
+    void zoomAt(const QPoint& widgetPos, double factor);
+
     // Modo círculo: arrastrar pinta desde el centro, mover arrastra el centro
     // y el borde cambia el radio.
     void setCircleEnabled(bool enabled);
@@ -49,6 +59,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 
 private:
     enum class CircleEdit
@@ -64,6 +75,8 @@ private:
     QPointF toWidget(const QPointF& imagePoint) const;
     QPointF toImage(const QPointF& widgetPoint) const;
     void drawLoading(QPainter& painter) const;
+    // Recorta el desplazamiento para que la imagen no se salga del visor.
+    QPointF clampOffset(const QPointF& offset) const;
 
     QImage image_;
     QPoint selStart_;
@@ -87,4 +100,6 @@ private:
     bool panning_ = false;
     QPointF panStart_;
     QPointF offsetOrigin_;
+    bool panEnabled_ = false; // pan con botón izquierdo (visor procesado)
+    bool panHover_ = false;   // cursor de mano al pasar por encima
 };

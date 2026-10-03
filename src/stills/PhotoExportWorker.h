@@ -35,6 +35,8 @@ public:
         std::map<int, ImageAdjust> photoAdjusts; // overrides por foto
         QString outDir;          // imágenes
         QString outFile;         // mp4
+        // Prefijo de los nombres generados (timestamp + nombre del origen).
+        QString baseName;
     };
 
     // `selection` vacío = exportar todas; si no, solo las fotos con `true`.

@@ -47,43 +47,42 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
     connect(scopeCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ImageAdjustPanel::onScopeChanged);
 
-    // --- Balance de blancos ---
+    // --- Balance de blancos (calidez relativa al neutro) ---
     auto* wbGroup = new QGroupBox(tr("Balance de blancos"), this);
     auto* wbLay = new QVBoxLayout(wbGroup);
     wbLay->setContentsMargins(8, 16, 8, 8);
     wbLay->setSpacing(4);
 
-    auto* wbDetRow = new QHBoxLayout();
-    wbDetectedLabel_ = new QLabel(tr("EXIF: —"), wbGroup);
-    wbDetRow->addWidget(wbDetectedLabel_);
-    wbDetRow->addStretch();
-    wbLay->addLayout(wbDetRow);
-
     auto* wbRow = new QHBoxLayout();
-    wbSlider_ = makeSlider(ImageAdjustLimits::kMinKelvin,
-                           ImageAdjustLimits::kMaxKelvin,
-                           ImageAdjustLimits::kDefaultKelvin, 50, wbGroup);
-    wbSlider_->setToolTip(tr("Temperatura de balance de blancos (K). "
-                               "11250 = neutro; bajar = más frío, subir = más cálido"));
-    wbRow->addWidget(wbSlider_);
-    wbSpin_ = new QSpinBox(wbGroup);
-    wbSpin_->setRange(ImageAdjustLimits::kMinKelvin, ImageAdjustLimits::kMaxKelvin);
-    wbSpin_->setValue(ImageAdjustLimits::kDefaultKelvin);
-    wbSpin_->setSuffix(tr(" K"));
-    wbSpin_->setSingleStep(100);
-    wbSpin_->setFixedWidth(80);
-    wbRow->addWidget(wbSpin_);
-    wbValueLabel_ = makeValueLabel(tr("%1 K").arg(ImageAdjustLimits::kDefaultKelvin),
-                                   wbGroup);
-    wbValueLabel_->setVisible(false);  // hidden; spinbox shows the value
+    wbSlider_ = makeSlider(ImageAdjustLimits::kMinWarmth,
+                           ImageAdjustLimits::kMaxWarmth, 0, 10, wbGroup);
+    wbSlider_->setToolTip(
+        tr("El centro (0) deja la foto tal como sale de la cámara o del archivo.\n"
+           "A la derecha más cálida, a la izquierda más fría.\n"
+           "No hay valores en grados porque no se puede saber con qué luz se tomó."));
+    wbRow->addWidget(wbSlider_, 1);
+    wbValueLabel_ = makeValueLabel(tr("Neutro"), wbGroup);
+    wbRow->addWidget(wbValueLabel_);
     wbLay->addLayout(wbRow);
 
+    auto* wbScaleRow = new QHBoxLayout();
+    auto* coldLbl = new QLabel(tr("Frío"), wbGroup);
+    auto* warmLbl = new QLabel(tr("Cálido"), wbGroup);
+    coldLbl->setAlignment(Qt::AlignLeft);
+    warmLbl->setAlignment(Qt::AlignRight);
+    auto* neutralLbl = new QLabel(tr("◄ Neutro ►"), wbGroup);
+    neutralLbl->setAlignment(Qt::AlignCenter);
+    wbScaleRow->addWidget(coldLbl);
+    wbScaleRow->addWidget(neutralLbl, 1);
+    wbScaleRow->addWidget(warmLbl);
+    wbLay->addLayout(wbScaleRow);
+
     auto* wbBtnRow = new QHBoxLayout();
-    detectWbBtn_ = new QPushButton(tr("Detectar"), wbGroup);
-    detectWbBtn_->setToolTip(tr("Ancla el deslizador a la temperatura EXIF de la foto "
-                                 "(si existe); si no, vuelve al neutro (11250 K)"));
+    centerWarmthBtn_ = new QPushButton(tr("Centrar"), wbGroup);
+    centerWarmthBtn_->setToolTip(tr("Vuelve al punto neutro: la foto queda tal como "
+                                    "salió, sin corregir ni calentar ni enfriar"));
     wbBtnRow->addStretch();
-    wbBtnRow->addWidget(detectWbBtn_);
+    wbBtnRow->addWidget(centerWarmthBtn_);
     wbLay->addLayout(wbBtnRow);
 
     mainLayout->addWidget(wbGroup);
@@ -211,8 +210,6 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
 
     // --- Conexiones ---
     connect(wbSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onWbSliderChanged);
-    connect(wbSpin_, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &ImageAdjustPanel::onWbSpinChanged);
     connect(sodiumSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onSodiumChanged);
     connect(mercurySlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onMercuryChanged);
     connect(denoiseSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onDenoiseChanged);
@@ -220,22 +217,14 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
     connect(brightnessSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onBrightnessChanged);
     connect(contrastSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onContrastChanged);
     connect(resetBtn_, &QPushButton::clicked, this, &ImageAdjustPanel::onResetClicked);
-    connect(detectWbBtn_, &QPushButton::clicked, this, &ImageAdjustPanel::onDetectWbClicked);
+    connect(centerWarmthBtn_, &QPushButton::clicked, this,
+            &ImageAdjustPanel::onCenterWarmthClicked);
     connect(undoBtn_, &QPushButton::clicked, this, &ImageAdjustPanel::onUndoClicked);
 
-    // Gestos del slider WB para undo (una presidency = un paso).
-    connect(wbSlider_, &QSlider::sliderPressed, this, [this]() {
-        lastState_ = currentAdjust();
-    });
-    connect(wbSlider_, &QSlider::sliderReleased, this, [this]() {
-        const ImageAdjust now = currentAdjust();
-        if (now != lastState_) {
-            undoDeque_.push_back(lastState_);
-            if (undoDeque_.size() > kMaxUndo)
-                undoDeque_.pop_front();
-            undoBtn_->setEnabled(true);
-        }
-    });
+    // Historial de deshacer por arrastre: un gesto = un paso (no uno por tick).
+    for (QSlider* s : {wbSlider_, sodiumSlider_, mercurySlider_, denoiseSlider_,
+                        exposureSlider_, brightnessSlider_, contrastSlider_})
+        installSliderUndo(s);
 
     // Ocultar el alcance en modo vídeo
     scopeCombo_->setVisible(false);
@@ -244,7 +233,7 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
 ImageAdjust ImageAdjustPanel::currentAdjust() const
 {
     ImageAdjust a;
-    a.wbKelvin = wbSlider_->value();
+    a.wbWarmth = wbSlider_->value();
     a.lpSodium = sodiumSlider_->value();
     a.lpMercury = mercurySlider_->value();
     a.denoise = denoiseSlider_->value();
@@ -262,16 +251,14 @@ void ImageAdjustPanel::setAdjust(const ImageAdjust& adj)
     lastState_ = adj;
 
     suppressUndo_ = true;
-    const int wb = adj.wbKelvin ? adj.wbKelvin : ImageAdjustLimits::kDefaultKelvin;
-    wbSlider_->setValue(wb);
-    wbSpin_->setValue(wb);
+    wbSlider_->setValue(adj.wbWarmth);
     sodiumSlider_->setValue(adj.lpSodium);
     mercurySlider_->setValue(adj.lpMercury);
     denoiseSlider_->setValue(adj.denoise);
     exposureSlider_->setValue(adj.exposureEv);
     brightnessSlider_->setValue(adj.brightness);
     contrastSlider_->setValue(adj.contrast);
-    updateWbLabel();
+    updateWarmthLabel();
     suppressUndo_ = false;
 }
 
@@ -279,15 +266,6 @@ void ImageAdjustPanel::setMode(Mode mode)
 {
     mode_ = mode;
     scopeCombo_->setVisible(mode == Mode::Photos);
-}
-
-void ImageAdjustPanel::setDetectedKelvin(int kelvin)
-{
-    detectedKelvin_ = kelvin;
-    if (kelvin > 0)
-        wbDetectedLabel_->setText(tr("EXIF: %1 K").arg(kelvin));
-    else
-        wbDetectedLabel_->setText(tr("EXIF: —"));
 }
 
 void ImageAdjustPanel::clearHistory()
@@ -298,49 +276,30 @@ void ImageAdjustPanel::clearHistory()
 
 void ImageAdjustPanel::onWbSliderChanged(int value)
 {
-    if (!suppressUndo_) {
-        wbSpin_->blockSignals(true);
-        wbSpin_->setValue(value);
-        wbSpin_->blockSignals(false);
-    }
-    updateWbLabel();
-    emit adjustEdited(currentAdjust());
-}
-
-void ImageAdjustPanel::onWbSpinChanged(int value)
-{
-    if (!suppressUndo_) {
-        // Capturar estado antes del cambio (igual que slider drag).
-        lastState_ = currentAdjust();
-        // QSpinBox puede tener el antiguo valor; lo ignoramos y usamos value.
-        suppressUndo_ = true;
-        wbSlider_->setValue(value);
-        suppressUndo_ = false;
-        // Empujar undo por el cambio anterior.
-        undoDeque_.push_back(lastState_);
-        if (undoDeque_.size() > kMaxUndo)
-            undoDeque_.pop_front();
-        undoBtn_->setEnabled(true);
-    }
-    updateWbLabel();
+    Q_UNUSED(value)
+    updateWarmthLabel();
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
 void ImageAdjustPanel::onSodiumChanged(int value)
 {
     sodiumValueLabel_->setText(tr("%1%").arg(value));
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
 void ImageAdjustPanel::onMercuryChanged(int value)
 {
     mercuryValueLabel_->setText(tr("%1%").arg(value));
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
 void ImageAdjustPanel::onDenoiseChanged(int value)
 {
     denoiseValueLabel_->setText(QString::number(value));
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
@@ -348,18 +307,21 @@ void ImageAdjustPanel::onExposureChanged(int value)
 {
     const float ev = static_cast<float>(value) / 10.f;
     exposureValueLabel_->setText(tr("%1").arg(ev, 0, 'f', 1));
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
 void ImageAdjustPanel::onBrightnessChanged(int value)
 {
     brightnessValueLabel_->setText(QString::number(value));
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
 void ImageAdjustPanel::onContrastChanged(int value)
 {
     contrastValueLabel_->setText(QString::number(value));
+    noteEdit();
     emit adjustEdited(currentAdjust());
 }
 
@@ -369,38 +331,30 @@ void ImageAdjustPanel::onResetClicked()
     undoDeque_.clear();
     undoBtn_->setEnabled(false);
     suppressUndo_ = true;
-    wbSlider_->setValue(ImageAdjustLimits::kDefaultKelvin);
-    wbSpin_->setValue(ImageAdjustLimits::kDefaultKelvin);
+    wbSlider_->setValue(0);
     sodiumSlider_->setValue(0);
     mercurySlider_->setValue(0);
     denoiseSlider_->setValue(0);
     exposureSlider_->setValue(0);
     brightnessSlider_->setValue(0);
     contrastSlider_->setValue(0);
-    updateWbLabel();
+    updateWarmthLabel();
     suppressUndo_ = false;
+    lastState_ = currentAdjust();
     emit resetRequested();
     emit adjustEdited(currentAdjust());
 }
 
-void ImageAdjustPanel::onDetectWbClicked()
+void ImageAdjustPanel::onCenterWarmthClicked()
 {
-    // Usar EXIF si existe; si no, 11250 K.
-    const int target = (detectedKelvin_ >= ImageAdjustLimits::kMinKelvin &&
-                        detectedKelvin_ <= ImageAdjustLimits::kMaxKelvin)
-                           ? detectedKelvin_
-                           : ImageAdjustLimits::kDefaultKelvin;
-    // Empujar estado actual al undo antes del cambio.
-    undoDeque_.push_back(currentAdjust());
-    if (undoDeque_.size() > kMaxUndo)
-        undoDeque_.pop_front();
-    undoBtn_->setEnabled(true);
-
+    if (wbSlider_->value() == 0)
+        return;
+    pushUndo();
     suppressUndo_ = true;
-    wbSlider_->setValue(target);
-    wbSpin_->setValue(target);
+    wbSlider_->setValue(0);
     suppressUndo_ = false;
-    updateWbLabel();
+    updateWarmthLabel();
+    lastState_ = currentAdjust();
     emit adjustEdited(currentAdjust());
 }
 
@@ -413,16 +367,16 @@ void ImageAdjustPanel::onUndoClicked()
     undoBtn_->setEnabled(!undoDeque_.empty());
 
     suppressUndo_ = true;
-    wbSlider_->setValue(prev.wbKelvin);
-    wbSpin_->setValue(prev.wbKelvin);
+    wbSlider_->setValue(prev.wbWarmth);
     sodiumSlider_->setValue(prev.lpSodium);
     mercurySlider_->setValue(prev.lpMercury);
     denoiseSlider_->setValue(prev.denoise);
     exposureSlider_->setValue(prev.exposureEv);
     brightnessSlider_->setValue(prev.brightness);
     contrastSlider_->setValue(prev.contrast);
-    updateWbLabel();
+    updateWarmthLabel();
     suppressUndo_ = false;
+    lastState_ = prev;
     emit adjustEdited(currentAdjust());
 }
 
@@ -431,22 +385,49 @@ void ImageAdjustPanel::onScopeChanged(int index)
     emit scopeChanged(index == 1);
 }
 
-void ImageAdjustPanel::blockSignals_(bool block)
+void ImageAdjustPanel::pushUndo()
 {
-    const auto widgets = {static_cast<QWidget*>(wbSlider_),
-                          static_cast<QWidget*>(wbSpin_),
-                          static_cast<QWidget*>(sodiumSlider_),
-                          static_cast<QWidget*>(mercurySlider_),
-                          static_cast<QWidget*>(denoiseSlider_),
-                          static_cast<QWidget*>(exposureSlider_),
-                          static_cast<QWidget*>(brightnessSlider_),
-                          static_cast<QWidget*>(contrastSlider_)};
-    for (auto* w : widgets)
-        w->blockSignals(block);
+    if (suppressUndo_)
+        return;
+    undoDeque_.push_back(lastState_);
+    while (undoDeque_.size() > kMaxUndo)
+        undoDeque_.pop_front();
+    undoBtn_->setEnabled(true);
 }
 
-void ImageAdjustPanel::updateWbLabel()
+void ImageAdjustPanel::noteEdit()
+{
+    if (suppressUndo_ || dragging_)
+        return;
+    const ImageAdjust now = currentAdjust();
+    if (now == lastState_)
+        return;
+    pushUndo();
+    lastState_ = now;
+}
+
+void ImageAdjustPanel::installSliderUndo(QSlider* slider)
+{
+    connect(slider, &QSlider::sliderPressed, this, [this] {
+        dragging_ = true;
+        lastState_ = currentAdjust();
+    });
+    connect(slider, &QSlider::sliderReleased, this, [this] {
+        dragging_ = false;
+        if (currentAdjust() != lastState_) {
+            pushUndo();
+            lastState_ = currentAdjust();
+        }
+    });
+}
+
+void ImageAdjustPanel::updateWarmthLabel()
 {
     const int v = wbSlider_->value();
-    wbValueLabel_->setText(tr("%1 K").arg(v));
+    if (v == 0)
+        wbValueLabel_->setText(tr("Neutro"));
+    else if (v > 0)
+        wbValueLabel_->setText(tr("Cálido +%1").arg(v));
+    else
+        wbValueLabel_->setText(tr("Frío %1").arg(v));
 }

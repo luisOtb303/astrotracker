@@ -95,7 +95,10 @@ void VideoExportWorker::run()
                      .arg(toVideo ? QStringLiteral("MP4") : QStringLiteral("imágenes"))
                      .arg(toVideo ? settings_.outFile
                                   : QDir(settings_.outDir).filePath(
-                                        QStringLiteral("frame_0000.%1")
+                                        QStringLiteral("%1_00000.%2")
+                                            .arg(settings_.baseName.isEmpty()
+                                                     ? QStringLiteral("frame")
+                                                     : settings_.baseName)
                                             .arg(settings_.format == Format::Png
                                                      ? QStringLiteral("png")
                                                      : QStringLiteral("jpg")))));
@@ -189,7 +192,10 @@ void VideoExportWorker::run()
                 ++written;
         } else {
             out = fitToCanvas(out, canvas);
-            const QString name = QStringLiteral("frame_%1.%2")
+            const QString stem = settings_.baseName.isEmpty() ? QStringLiteral("frame")
+                                                     : settings_.baseName;
+            const QString name = QStringLiteral("%1_%2.%3")
+                                     .arg(stem)
                                      .arg(static_cast<long long>(frameIndex), 5, 10,
                                           QLatin1Char('0'))
                                      .arg(settings_.format == Format::Png ? QStringLiteral("png")

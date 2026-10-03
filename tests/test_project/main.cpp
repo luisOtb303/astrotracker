@@ -1,5 +1,6 @@
 #include "stills/PhotoProject.h"
 
+#include <QByteArray>
 #include <cstdio>
 
 namespace {
@@ -41,13 +42,13 @@ PhotoProject makeSample()
     p.photos.seedRadius = 120.f;
     {
         ImageAdjust adj;
-        adj.wbKelvin = 5500;
+        adj.wbWarmth = -20;
         adj.exposureEv = 5;
         p.photos.adjust = adj;
     }
     {
         ImageAdjust perPhoto;
-        perPhoto.wbKelvin = 7000;
+        perPhoto.wbWarmth = 35;
         perPhoto.lpSodium = 30;
         p.photos.adjustOverrides[1] = perPhoto;
     }
@@ -120,12 +121,12 @@ int main()
                sameFloat(dst.photos.seedRadius, 120.f),
            "circulo de la semilla preservado");
     expect(dst.photos.results.size() == 3, "resultados dispersos preservados");
-    expect(dst.photos.adjust.wbKelvin == 5500, "ajuste fotos: kelvin global");
+    expect(dst.photos.adjust.wbWarmth == -20, "ajuste fotos: calidez global");
     expect(dst.photos.adjust.exposureEv == 5, "ajuste fotos: EV global");
     expect(dst.photos.adjustOverrides.size() == 1, "ajuste fotos: overrides size");
     if (!dst.photos.adjustOverrides.empty()) {
         const auto& ov = dst.photos.adjustOverrides.begin()->second;
-        expect(ov.wbKelvin == 7000, "ajuste fotos: override kelvin");
+        expect(ov.wbWarmth == 35, "ajuste fotos: override calidez");
         expect(ov.lpSodium == 30, "ajuste fotos: override sodio");
     }
 
@@ -170,7 +171,7 @@ int main()
     expect(dst.video.tracker == 1 && dst.video.borderMode == 1, "ajustes del pipeline");
     expect(dst.video.smoothingAlpha > 0.41 && dst.video.smoothingAlpha < 0.43,
            "suavizado preservado");
-    expect(dst.video.adjust.wbKelvin == 0 && dst.video.adjust.lpSodium == 0 &&
+    expect(dst.video.adjust.wbWarmth == 0 && dst.video.adjust.lpSodium == 0 &&
                dst.video.adjust.exposureEv == 0,
            "ajuste video: valores por defecto");
 
@@ -182,7 +183,39 @@ int main()
     expect(!emptyOut.photos.active && !emptyOut.video.active,
            "proyecto vacio sin secciones activas");
 
-    // 3. Rechazo de documentos invalidos.
+    // 3. Migracion del formato v0.5.0 ("wbK" absoluto) al relativo ("wbOffset").
+    {
+        const QByteArray legacy = QByteArray(
+            "{\"app\":\"AstroTracker\",\"formato\":1,"
+            "\"fotos\":{\"activo\":true,\"ajuste\":{\"wbK\":11250}},"
+            "\"video\":{\"activo\":true,\"ajuste\":{\"wbK\":4500}}}");
+        PhotoProject migrated;
+        const bool okLegacy = photo_project::decode(legacy, migrated);
+        expect(okLegacy, "decode proyecto legacy");
+        if (okLegacy) {
+            // v0.5.0 guardaba Kelvin absoluto: 4500 K frio, muy por debajo del
+            // neutro de 11250 K, debe saturar al minimo del control relativo.
+            expect(migrated.photos.adjust.wbWarmth == 0,
+                   "migracion wbK: 11250 K -> neutro");
+            expect(migrated.video.adjust.wbWarmth == ImageAdjustLimits::kMinWarmth,
+                   "migracion wbK: 4500 K -> extremo frio");
+        }
+    }
+
+    // 4. "wbOffset" moderno: se respeta tal cual, sin reescalar.
+    {
+        const QByteArray modern = QByteArray(
+            "{\"app\":\"AstroTracker\",\"formato\":1,"
+            "\"fotos\":{\"activo\":true,\"ajuste\":{\"wbOffset\":42}}}");
+        PhotoProject modernOut;
+        const bool okModern = photo_project::decode(modern, modernOut);
+        expect(okModern, "decode proyecto moderno");
+        if (okModern)
+            expect(modernOut.photos.adjust.wbWarmth == 42,
+                   "wbOffset se lee literal");
+    }
+
+    // 5. Rechazo de documentos invalidos.
     PhotoProject junk;
     expect(!photo_project::decode(QByteArray("{ no es json"), junk),
            "json corrupto rechazado");

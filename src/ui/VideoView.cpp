@@ -83,18 +83,67 @@ void VideoView::setZoomPercent(int percent)
                                 h / static_cast<double>(image_.height()));
     const double target = percent / 100.0;
     zoom_ = std::max(1.0, target / std::max(fit, 1e-6));
+    offset_ = clampOffset(offset_);
     update();
+}
+
+void VideoView::setPanEnabled(bool enabled)
+{
+    panEnabled_ = enabled;
+    if (!enabled)
+        panHover_ = false;
+    update();
+}
+
+QPointF VideoView::clampOffset(const QPointF& offset) const
+{
+    if (image_.isNull() || zoom_ <= 1.0)
+        return QPointF();
+    // Tamaño de la imagen ya escalada, sin aplicar el desplazamiento.
+    const double fit = std::min(width() / static_cast<double>(image_.width()),
+                                height() / static_cast<double>(image_.height()));
+    const double w = image_.width() * fit * zoom_;
+    const double h = image_.height() * fit * zoom_;
+    // Si la imagen no llega a cubrir el visor, no hay nada que desplazar: se
+    // queda centrada. Si lo cubre, se limita a no descubrir zonas vacías.
+    const double maxX = std::max(0.0, (w - width()) / 2.0);
+    const double maxY = std::max(0.0, (h - height()) / 2.0);
+    return QPointF(std::clamp(offset.x(), -maxX, maxX),
+                   std::clamp(offset.y(), -maxY, maxY));
 }
 
 void VideoView::zoomIn()
 {
     zoom_ = std::max(1.0, zoom_ * 1.25);
+    offset_ = clampOffset(offset_);
     update();
 }
 
 void VideoView::zoomOut()
 {
     zoom_ = std::max(1.0, zoom_ / 1.25);
+    offset_ = clampOffset(offset_);
+    update();
+}
+
+void VideoView::zoomAt(const QPoint& widgetPos, double factor)
+{
+    if (image_.isNull())
+        return;
+    const double newZoom = std::max(1.0, zoom_ * factor);
+    if (qFuzzyCompare(newZoom, zoom_))
+        return;
+
+    // Punto de imagen bajo el cursor: es lo que debe seguir ahí después.
+    const QPointF anchorImg = toImage(widgetPos);
+
+    zoom_ = newZoom;
+
+    // Dónde caería ese punto con el desplazamiento actual, y cuánto hay que
+    // desplazarlo para devolverlo al cursor.
+    const QPointF anchorNow = toWidget(anchorImg);
+    offset_ += QPointF(widgetPos) - anchorNow;
+    offset_ = clampOffset(offset_);
     update();
 }
 
@@ -227,15 +276,46 @@ void VideoView::paintEvent(QPaintEvent*)
 
 void VideoView::mousePressEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::MiddleButton && !image_.isNull()) {
+    if (image_.isNull())
+        return;
+
+    // Botón central: pan en cualquier visor.
+    if (event->button() == Qt::MiddleButton) {
         panning_ = true;
         panStart_ = event->pos();
         offsetOrigin_ = offset_;
+        setCursor(Qt::ClosedHandCursor);
         return;
     }
 
-    if (event->button() != Qt::LeftButton || image_.isNull())
+    // Botón izquierdo con Ctrl: pan donde el izquierdo pinte ROI o círculo.
+    if (event->button() == Qt::LeftButton
+        && (event->modifiers() & Qt::ControlModifier) != 0) {
+        panning_ = true;
+        panStart_ = event->pos();
+        offsetOrigin_ = offset_;
+        setCursor(Qt::ClosedHandCursor);
         return;
+    }
+
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    // Visor del resultado: el izquierdo no dibuja nada, así que sirve para
+    // desplazarse por la foto cuando estáAmpliada.
+    if (panEnabled_) {
+        if (circleEnabled_ || roiEnabled_) {
+            // Con ROI o círculo activos manda la herramienta; aun así, si ya
+            // hay zoom, el arrastre desplaza.
+            if (!isZoomed())
+                return;
+        }
+        panning_ = true;
+        panStart_ = event->pos();
+        offsetOrigin_ = offset_;
+        setCursor(Qt::ClosedHandCursor);
+        return;
+    }
 
     if (circleEnabled_) {
         const QPointF img = toImage(event->pos());
@@ -278,9 +358,17 @@ void VideoView::mousePressEvent(QMouseEvent* event)
 void VideoView::mouseMoveEvent(QMouseEvent* event)
 {
     if (panning_) {
-        offset_ = offsetOrigin_ + (event->pos() - panStart_);
+        offset_ = clampOffset(offsetOrigin_ + (event->pos() - panStart_));
         update();
         return;
+    }
+
+    // Cursor de mano sobre el visor del resultado (o donde el pan está activo),
+    // para que se vea que se puede arrastrar.
+    const bool canPan = panEnabled_ ? true : isZoomed();
+    if (canPan != panHover_ && event->buttons() == Qt::NoButton) {
+        panHover_ = canPan;
+        setCursor(canPan ? Qt::OpenHandCursor : Qt::ArrowCursor);
     }
 
     if (selecting_) {
@@ -313,9 +401,14 @@ void VideoView::mouseMoveEvent(QMouseEvent* event)
 
 void VideoView::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::MiddleButton) {
+    if (panning_) {
         panning_ = false;
-        return;
+        setCursor(panHover_ ? Qt::OpenHandCursor : Qt::ArrowCursor);
+        if (event->button() == Qt::MiddleButton
+            || (event->button() == Qt::LeftButton
+                && (event->modifiers() & Qt::ControlModifier) != 0)
+            || panEnabled_)
+            return;
     }
 
     if (event->button() != Qt::LeftButton)
@@ -361,8 +454,16 @@ void VideoView::wheelEvent(QWheelEvent* event)
     if (image_.isNull())
         return;
     const int delta = event->angleDelta().y();
-    if (delta > 0)
-        zoomIn();
-    else if (delta < 0)
-        zoomOut();
+    if (delta == 0)
+        return;
+    zoomAt(event->position().toPoint(), delta > 0 ? 1.25 : 1.0 / 1.25);
+}
+
+void VideoView::leaveEvent(QEvent* event)
+{
+    if (!panning_ && panHover_) {
+        panHover_ = false;
+        setCursor(Qt::ArrowCursor);
+    }
+    QWidget::leaveEvent(event);
 }

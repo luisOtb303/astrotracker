@@ -1,9 +1,11 @@
 #include "ui/PhotoPanel.h"
 
 #include "common/AppLog.h"
+#include "common/ExportNaming.h"
 #include "common/ImageAdjust.h"
 #include "ui/DebugDep.h"
 #include "ui/panels/ImageAdjustPanel.h"
+#include "processing/AdjustWorker.h"
 #include "processing/BorderHandler.h"
 #include "stills/PhotoExportWorker.h"
 #include "stills/PhotoFrameLoader.h"
@@ -18,6 +20,7 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -217,6 +220,9 @@ PhotoPanel::PhotoPanel(QWidget* parent)
     resultView_ = new VideoView(this);
     resultView_->setRoiEnabled(false);
     resultView_->setCircleEnabled(false);
+    // Aquí el botón izquierdo no dibuja nada, así que sirve para recorrer la
+    // foto cuando se ha ampliado.
+    resultView_->setPanEnabled(true);
     resultBox->addWidget(resultView_, 1);
 
     viewers->addLayout(sourceBox, 1);
@@ -269,14 +275,19 @@ PhotoPanel::PhotoPanel(QWidget* parent)
             saved))
         trackingProfile_ = trackingProfileFor(saved);
 
-    // Timer de debounce para refrescar la vista en tiempo real al cambiar ajustes.
+    // Timer de debounce: agrupa los cambios rapidos de un arrastre en una sola
+    // peticion al worker de ajustes.
     adjustDebounce_ = new QTimer(this);
     adjustDebounce_->setSingleShot(true);
     adjustDebounce_->setInterval(60);
-    connect(adjustDebounce_, &QTimer::timeout, this, &PhotoPanel::refreshView);
+    connect(adjustDebounce_, &QTimer::timeout, this, &PhotoPanel::requestAdjustPreview);
 }
 
-PhotoPanel::~PhotoPanel() = default;
+PhotoPanel::~PhotoPanel()
+{
+    if (adjustWorker_)
+        adjustWorker_->shutdown();
+}
 
 void PhotoPanel::openImagesDialog()
 {
@@ -399,7 +410,6 @@ void PhotoPanel::clearSession()
     updatingBadges_ = false;
     globalAdjust_ = ImageAdjust{};
     photoAdjusts_.clear();
-    detectedKelvin_ = 0;
     scopePerPhoto_ = false;
     rawFrame_ = cv::Mat();
     rawFrameIndex_ = -1;
@@ -589,13 +599,22 @@ void PhotoPanel::showCurrentSync()
         view_->setFrame(cv::Mat());
         resultView_->setFrame(cv::Mat());
         rawFrame_ = cv::Mat();
+        processedFrame_ = cv::Mat();
         rawFrameIndex_ = -1;
         return;
     }
     rawFrame_ = frame;
+    processedFrame_ = cv::Mat();
     rawFrameIndex_ = current_;
     view_->setFrame(frame);
-    updateViewerCircles(frame);
+    if (effectiveAdjust().isDefault()) {
+        updateViewerCircles(frame);
+    } else {
+        // Hay ajustes: pedir el frame procesado al worker en vez de bloquear
+        // aqui con el denoise.
+        ensureAdjustWorker();
+        requestAdjustPreview();
+    }
     syncPhotoAdjust();
     emitFileInfo(current_);
 }
@@ -642,11 +661,15 @@ void PhotoPanel::onPlaybackTick()
     cv::Mat frame;
     if (reader_.readAt(current_, frame, displayMaxDim_) && !frame.empty()) {
         rawFrame_ = frame;
+        processedFrame_ = cv::Mat();
         rawFrameIndex_ = current_;
         view_->setLoading(false);
         resultView_->setLoading(false);
         view_->setFrame(frame);
-        updateViewerCircles(frame);
+        if (effectiveAdjust().isDefault())
+            updateViewerCircles(frame);
+        else
+            requestAdjustPreview();
     }
     updateNavUi();
     emitFileInfo(current_);
@@ -727,7 +750,7 @@ void PhotoPanel::showCurrent()
 
 void PhotoPanel::updateViewerCircles(const cv::Mat& raw)
 {
-    cv::Mat processed = applyImage(raw);
+    const cv::Mat processed = processedFrame_.empty() ? raw : processedFrame_;
 
     if (analyzed_ && current_ < static_cast<int64_t>(tracks_.size())) {
         const DiscTrack& t = tracks_[static_cast<size_t>(current_)];
@@ -855,9 +878,42 @@ void PhotoPanel::onImageAdjustChanged(const ImageAdjust& adj)
     adjustDebounce_->start();
 }
 
-cv::Mat PhotoPanel::applyImage(const cv::Mat& src) const
+void PhotoPanel::ensureAdjustWorker()
 {
-    return img::apply(src, effectiveAdjust(), detectedKelvin_);
+    if (adjustWorker_)
+        return;
+    adjustWorker_ = new AdjustWorker(this);
+    connect(adjustWorker_, &AdjustWorker::adjusted,
+            this, &PhotoPanel::onAdjustedFrame);
+    adjustWorker_->start();
+}
+
+void PhotoPanel::requestAdjustPreview()
+{
+    ensureAdjustWorker();
+    // El worker necesita el frame crudo actual, no el procesado.
+    if (rawFrameIndex_ != current_ || rawFrame_.empty()) {
+        // Foto aun no cargada: refreshView la pedira cuando llegue.
+        refreshView();
+        return;
+    }
+
+    const ImageAdjust adj = effectiveAdjust();
+    adjustWorker_->setSource(rawFrame_);
+    if (adjustWorker_->request(adj))
+        ++adjustSeq_;
+    else
+        // Ajuste identidad: mostrar el crudo ya mismo, sin esperar al hilo.
+        onAdjustedFrame(rawFrame_, adjustSeq_);
+}
+
+void PhotoPanel::onAdjustedFrame(const cv::Mat& out, quint64 seq)
+{
+    // Resultado de un ajuste que ya no es el vigente: se ignora.
+    if (seq != adjustSeq_)
+        return;
+    processedFrame_ = out;
+    updateViewerCircles(rawFrame_);
 }
 
 ImageAdjust PhotoPanel::effectiveAdjust() const
@@ -884,7 +940,6 @@ void PhotoPanel::syncPhotoAdjust()
     // (adjustEdited → onImageAdjustChanged → syncPhotoAdjust).
     imgPanel_->blockSignals(true);
     imgPanel_->setAdjust(eff);
-    imgPanel_->setDetectedKelvin(detectedKelvin_);
     imgPanel_->blockSignals(false);
 }
 
@@ -894,11 +949,6 @@ void PhotoPanel::resetImageAdjust()
     photoAdjusts_.clear();
     syncPhotoAdjust();
     refreshView();
-}
-
-void PhotoPanel::setDetectedKelvin(int kelvin)
-{
-    detectedKelvin_ = kelvin;
 }
 
 void PhotoPanel::refreshView()
@@ -912,20 +962,24 @@ void PhotoPanel::refreshView()
         return;
     }
     const ImageAdjust adj = effectiveAdjust();
-    depLog(QStringLiteral("Aplicando ajuste foto %1: wbK=%2 ev=%3 brillo=%4 "
+    depLog(QStringLiteral("Ajustes foto %1: calidez=%2 ev=%3 brillo=%4 "
                           "contraste=%5 sodio=%6 mercurio=%7 ruido=%8")
                .arg(current_ + 1)
-               .arg(adj.wbKelvin)
+               .arg(adj.wbWarmth)
                .arg(adj.exposureEv)
                .arg(adj.brightness)
                .arg(adj.contrast)
                .arg(adj.lpSodium)
                .arg(adj.lpMercury)
                .arg(adj.denoise));
-    QApplication::setOverrideCursor(Qt::WaitCursor);
+    // El visor izquierdo siempre muestra el crudo; el derecho, lo ajustado.
     view_->setFrame(rawFrame_);
-    updateViewerCircles(rawFrame_);
-    QApplication::restoreOverrideCursor();
+    if (adj.isDefault()) {
+        processedFrame_ = cv::Mat();
+        updateViewerCircles(rawFrame_);
+    } else {
+        requestAdjustPreview();
+    }
 }
 
 void PhotoPanel::setImageAdjustPanel(ImageAdjustPanel* panel)
@@ -1180,15 +1234,42 @@ void PhotoPanel::runExportDialog(bool toVideo)
     smoothLay->addWidget(brightChk);
     lay->addWidget(smoothGroup);
 
+    // Destino por defecto: junto al origen, con timestamp y nombre de origen.
+    // Así no hay que buscar carpeta y nunca se pisa una exportación anterior.
+    // Carpeta del origen: la elegida al abrir, o la del primer archivo si la
+    // secuencia se cargó desde una lista.
+    QString srcFolder = sourceFolder_;
+    if (srcFolder.isEmpty() && reader_.isOpen() && reader_.count() > 0)
+        srcFolder = QFileInfo(QString::fromStdString(reader_.filePath(0))).absolutePath();
+    const QString defaultStem = export_naming::prefix(srcFolder, true);
+
     auto* destLabel = new QLabel(tr("Destino"), &dlg);
     lay->addWidget(destLabel);
     auto* destRow = new QHBoxLayout();
     auto* destEdit = new QLineEdit(&dlg);
-    destEdit->setReadOnly(true);
+    destEdit->setReadOnly(false);
     auto* browseBtn = new QPushButton(tr("Examinar..."), &dlg);
     destRow->addWidget(destEdit, 1);
     destRow->addWidget(browseBtn);
     lay->addLayout(destRow);
+
+    auto* defaultBtn = new QPushButton(tr("Usar carpeta del origen"), &dlg);
+    defaultBtn->setToolTip(tr("Vuelve a la carpeta donde están las fotos, con el "
+                              "nombre de origen y la fecha y hora actuales"));
+    lay->addWidget(defaultBtn);
+
+    const auto defaultDest = [&]() {
+        if (mp4Radio->isChecked())
+            return QDir(srcFolder).filePath(defaultStem + QStringLiteral(".mp4"));
+        return srcFolder;
+    };
+    destEdit->setText(defaultDest());
+
+    auto* openChk = new QCheckBox(tr("Abrir la carpeta al terminar"), &dlg);
+    openChk->setChecked(false);
+    openChk->setToolTip(tr("Al terminar la exportación, abre en el explorador la "
+                           "carpeta donde se han guardado los archivos"));
+    lay->addWidget(openChk);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     buttons->button(QDialogButtonBox::Ok)->setText(tr("Exportar"));
@@ -1197,7 +1278,8 @@ void PhotoPanel::runExportDialog(bool toVideo)
     const auto chooseDest = [&]() {
         if (mp4Radio->isChecked()) {
             const QString f = QFileDialog::getSaveFileName(
-                &dlg, tr("Vídeo de salida"), lastDir_, tr("MP4 (*.mp4)"));
+                &dlg, tr("Vídeo de salida"),
+                QFileInfo(destEdit->text()).absolutePath(), tr("MP4 (*.mp4)"));
             if (!f.isEmpty())
                 destEdit->setText(f);
         } else {
@@ -1208,6 +1290,11 @@ void PhotoPanel::runExportDialog(bool toVideo)
         }
     };
     connect(browseBtn, &QPushButton::clicked, &dlg, chooseDest);
+    connect(defaultBtn, &QPushButton::clicked, &dlg,
+            [&] { destEdit->setText(defaultDest()); });
+    // Al cambiar a vídeo hay que ofrecer el nombre por defecto, no la carpeta.
+    connect(mp4Radio, &QRadioButton::toggled, &dlg,
+            [&](bool on) { if (on) destEdit->setText(defaultDest()); });
     const auto updateFpsEnabled = [&]() {
         const bool isMp4 = mp4Radio->isChecked();
         fpsCombo->setEnabled(isMp4);
@@ -1229,7 +1316,9 @@ void PhotoPanel::runExportDialog(bool toVideo)
     PhotoExportWorker::Settings st;
     if (mp4Radio->isChecked()) {
         st.format = PhotoExportWorker::Format::Mp4;
-        st.outFile = destEdit->text();
+        st.outFile = QFileInfo(destEdit->text()).suffix().isEmpty()
+                         ? destEdit->text() + QStringLiteral(".mp4")
+                         : destEdit->text();
         bool okFps = false;
         const double fps = fpsCombo->currentText().toDouble(&okFps);
         st.fps = (okFps && fps > 0.0) ? fps : 10.0;
@@ -1238,6 +1327,13 @@ void PhotoPanel::runExportDialog(bool toVideo)
                                           : PhotoExportWorker::Format::Jpg;
         st.outDir = destEdit->text();
     }
+    // El prefijo se recalcula al aceptar: si el diálogo ha estado abierto un
+    // rato, la fecha y hora del nombre por defecto ya no son las de ahora.
+    st.baseName = export_naming::prefix(srcFolder, true);
+    openFolderAfterExport_ = openChk->isChecked();
+    lastExportFolder_ = mp4Radio->isChecked()
+                            ? QFileInfo(st.outFile).absolutePath()
+                            : QFileInfo(st.outDir).absolutePath();
     st.resolution = static_cast<PhotoExportWorker::Resolution>(resCombo->currentData().toInt());
     st.borderMode = borderCombo_->currentIndex();
     st.interp = interpCombo->currentData().toInt();
@@ -1321,7 +1417,12 @@ void PhotoPanel::onExportFinished(bool ok, const QString& error, int frames)
     if (ok) {
         emit statusMessage(tr("Exportación completada: %1 fotos").arg(frames), 6000);
         AppLog::info(tr("Exportación completada: %1 fotos").arg(frames));
+        // Solo si el usuario lo pidió: abrir el explorador es interrumpir.
+        if (openFolderAfterExport_ && !lastExportFolder_.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(lastExportFolder_));
+        lastExportFolder_.clear();
     } else {
+        lastExportFolder_.clear();
         emit statusMessage(tr("Exportación: %1")
                                .arg(error.isEmpty() ? tr("no se completó") : error), 0);
         AppLog::error(tr("Exportación: %1")
@@ -1718,13 +1819,14 @@ void PhotoPanel::onPhotoProcessed(int64_t index)
         if (analyzed_ && index < static_cast<int64_t>(tracks_.size())) {
             const DiscTrack& t = tracks_[static_cast<size_t>(index)];
             if (t.radius > 0.f) {
-                resultView_->setFrame(centeredFrame(applyImage(frame), t));
+                resultView_->setFrame(
+                    centeredFrame(img::apply(frame, effectiveAdjust()), t));
                 resultView_->setCircle(QPointF(frame.cols / 2.0, frame.rows / 2.0),
                                        t.radius, t.predicted);
                 return;
             }
         }
-        resultView_->setFrame(applyImage(frame));
+        resultView_->setFrame(img::apply(frame, effectiveAdjust()));
         resultView_->clearCircle();
     }
 }

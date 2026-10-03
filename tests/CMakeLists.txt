@@ -376,6 +376,32 @@ target_compile_definitions(test_project PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(test_project PRIVATE Qt6::Core ${OpenCV_LIBS})
 
 add_test(NAME test_project COMMAND test_project)
+
+# Nomenclatura de exportación: timestamp + nombre del origen, saneado.
+
+add_executable(test_exportnaming test_exportnaming/main.cpp
+  ../src/common/ExportNaming.h
+  ../src/common/ExportNaming.cpp)
+
+target_include_directories(test_exportnaming PRIVATE ../src)
+target_compile_definitions(test_exportnaming PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_exportnaming PRIVATE Qt6::Core ${OpenCV_LIBS})
+
+add_test(NAME test_exportnaming COMMAND test_exportnaming)
+
+# Worker de ajustes: aplica fuera del hilo principal y coalesce peticiones.
+
+add_executable(test_adjustworker test_adjustworker/main.cpp
+  ../src/common/ImageAdjust.h
+  ../src/common/ImageAdjust.cpp
+  ../src/processing/AdjustWorker.h
+  ../src/processing/AdjustWorker.cpp)
+
+target_include_directories(test_adjustworker PRIVATE ../src)
+target_compile_definitions(test_adjustworker PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_adjustworker PRIVATE Qt6::Core ${OpenCV_LIBS})
+
+add_test(NAME test_adjustworker COMMAND test_adjustworker)
 # Tests sintéticos de los detectores de disco (KnownRadius, Centroid,
 # PhaseCorrelation) y de la fusión por soporte radial.
 

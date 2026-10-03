@@ -1,9 +1,10 @@
-﻿#include "stills/PhotoProject.h"
+#include "stills/PhotoProject.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -29,6 +30,32 @@ int PhotoProjectPhotos::indexOfResult(const QString& name) const
 namespace photo_project {
 
 namespace {
+
+// Lee un objeto "ajuste" del JSON. El WB se guarda como desplazamiento relativo
+// ("wbOffset", -100..100); los proyectos v0.5.0 usaban "wbK" (Kelvin absoluto
+// con 11250 como neutro) y se migran aproximando el mismo efecto.
+ImageAdjust decodeAdjust(const QJsonObject& aj)
+{
+    ImageAdjust a;
+    if (aj.contains(QLatin1String("wbOffset"))) {
+        a.wbWarmth = qBound(ImageAdjustLimits::kMinWarmth,
+                            static_cast<int>(aj.value(QLatin1String("wbOffset")).toInt(0)),
+                            ImageAdjustLimits::kMaxWarmth);
+    } else if (aj.contains(QLatin1String("wbK"))) {
+        constexpr int kLegacyNeutral = 11250;
+        const int kelvin = static_cast<int>(aj.value(QLatin1String("wbK")).toInt(0));
+        const int migrated = qRound(static_cast<double>(kelvin - kLegacyNeutral) / 40.0);
+        a.wbWarmth = qBound(ImageAdjustLimits::kMinWarmth, migrated,
+                            ImageAdjustLimits::kMaxWarmth);
+    }
+    a.lpSodium = static_cast<int>(aj.value(QLatin1String("lpSodio")).toInt(0));
+    a.lpMercury = static_cast<int>(aj.value(QLatin1String("lpMercurio")).toInt(0));
+    a.exposureEv = static_cast<int>(aj.value(QLatin1String("ev")).toInt(0));
+    a.brightness = static_cast<int>(aj.value(QLatin1String("brillo")).toInt(0));
+    a.contrast = static_cast<int>(aj.value(QLatin1String("contraste")).toInt(0));
+    a.denoise = static_cast<int>(aj.value(QLatin1String("ruido")).toInt(0));
+    return a;
+}
 
 QJsonObject encodePhotos(const PhotoProjectPhotos& p)
 {
@@ -70,7 +97,7 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
     }
     if (!p.adjust.isDefault()) {
         QJsonObject aj;
-        aj.insert(QStringLiteral("wbK"), p.adjust.wbKelvin);
+        aj.insert(QStringLiteral("wbOffset"), p.adjust.wbWarmth);
         aj.insert(QStringLiteral("lpSodio"), p.adjust.lpSodium);
         aj.insert(QStringLiteral("lpMercurio"), p.adjust.lpMercury);
         aj.insert(QStringLiteral("ev"), p.adjust.exposureEv);
@@ -85,7 +112,7 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
             QJsonObject e;
             e.insert(QStringLiteral("indice"), idx);
             QJsonObject aj;
-            aj.insert(QStringLiteral("wbK"), adj.wbKelvin);
+            aj.insert(QStringLiteral("wbOffset"), adj.wbWarmth);
             aj.insert(QStringLiteral("lpSodio"), adj.lpSodium);
             aj.insert(QStringLiteral("lpMercurio"), adj.lpMercury);
             aj.insert(QStringLiteral("ev"), adj.exposureEv);
@@ -141,7 +168,7 @@ QJsonObject encodeVideo(const PhotoProjectVideo& v)
     o.insert(QStringLiteral("borde"), v.borderMode);
     if (!v.adjust.isDefault()) {
         QJsonObject aj;
-        aj.insert(QStringLiteral("wbK"), v.adjust.wbKelvin);
+        aj.insert(QStringLiteral("wbOffset"), v.adjust.wbWarmth);
         aj.insert(QStringLiteral("lpSodio"), v.adjust.lpSodium);
         aj.insert(QStringLiteral("lpMercurio"), v.adjust.lpMercury);
         aj.insert(QStringLiteral("ev"), v.adjust.exposureEv);
@@ -212,21 +239,11 @@ void decodePhotos(const QJsonObject& o, PhotoProjectPhotos& p)
         p.seedRadius = static_cast<float>(readDouble(seed.value(QLatin1String("radio")), 0.0));
     }
 
-    // Ajuste de imagen (v0.5.0+): "ajuste" objeto.
+    // Ajuste de imagen (v0.5.0+): "ajuste" objeto. Si no existe, el
+    // "wbCalor" pre-0.5.0 se ignora (valor obsoleto): ajuste neutro.
     const QJsonObject aj = o.value(QLatin1String("ajuste")).toObject();
-    if (!aj.isEmpty()) {
-        p.adjust.wbKelvin = readInt(aj.value(QLatin1String("wbK")), 0);
-        p.adjust.lpSodium = readInt(aj.value(QLatin1String("lpSodio")), 0);
-        p.adjust.lpMercury = readInt(aj.value(QLatin1String("lpMercurio")), 0);
-        p.adjust.exposureEv = readInt(aj.value(QLatin1String("ev")), 0);
-        p.adjust.brightness = readInt(aj.value(QLatin1String("brillo")), 0);
-        p.adjust.contrast = readInt(aj.value(QLatin1String("contraste")), 0);
-        p.adjust.denoise = readInt(aj.value(QLatin1String("ruido")), 0);
-    } else {
-        // Fallback: "wbCalor" (pre-0.5.0) → mapear a wbKelvin=0 (auto).
-        // Los proyectos viejos con warmth se ignoran (valor obsoleto).
-        p.adjust = ImageAdjust{};
-    }
+    if (!aj.isEmpty())
+        p.adjust = decodeAdjust(aj);
 
     // Overrides por foto: "ajustesFotos"
     const auto ajOverrides = o.value(QLatin1String("ajustesFotos")).toArray();
@@ -236,15 +253,7 @@ void decodePhotos(const QJsonObject& o, PhotoProjectPhotos& p)
         const QJsonObject adjObj = e.value(QLatin1String("ajuste")).toObject();
         if (idx < 0 || adjObj.isEmpty())
             continue;
-        ImageAdjust adj;
-        adj.wbKelvin = readInt(adjObj.value(QLatin1String("wbK")), 0);
-        adj.lpSodium = readInt(adjObj.value(QLatin1String("lpSodio")), 0);
-        adj.lpMercury = readInt(adjObj.value(QLatin1String("lpMercurio")), 0);
-        adj.exposureEv = readInt(adjObj.value(QLatin1String("ev")), 0);
-        adj.brightness = readInt(adjObj.value(QLatin1String("brillo")), 0);
-        adj.contrast = readInt(adjObj.value(QLatin1String("contraste")), 0);
-        adj.denoise = readInt(adjObj.value(QLatin1String("ruido")), 0);
-        p.adjustOverrides[idx] = adj;
+        p.adjustOverrides[idx] = decodeAdjust(adjObj);
     }
 
     const auto results = o.value(QLatin1String("resultados")).toArray();
@@ -292,17 +301,11 @@ void decodeVideo(const QJsonObject& o, PhotoProjectVideo& v)
     v.tracker = readInt(o.value(QLatin1String("tracker")));
     v.smoothingAlpha = readDouble(o.value(QLatin1String("suavizado")), 0.3);
     v.borderMode = readInt(o.value(QLatin1String("borde")));
+
     // Ajuste de imagen (v0.5.0+): "ajuste" objeto.
     const QJsonObject aj = o.value(QLatin1String("ajuste")).toObject();
-    if (!aj.isEmpty()) {
-        v.adjust.wbKelvin = readInt(aj.value(QLatin1String("wbK")), 0);
-        v.adjust.lpSodium = readInt(aj.value(QLatin1String("lpSodio")), 0);
-        v.adjust.lpMercury = readInt(aj.value(QLatin1String("lpMercurio")), 0);
-        v.adjust.exposureEv = readInt(aj.value(QLatin1String("ev")), 0);
-        v.adjust.brightness = readInt(aj.value(QLatin1String("brillo")), 0);
-        v.adjust.contrast = readInt(aj.value(QLatin1String("contraste")), 0);
-        v.adjust.denoise = readInt(aj.value(QLatin1String("ruido")), 0);
-    }
+    if (!aj.isEmpty())
+        v.adjust = decodeAdjust(aj);
 }
 
 } // namespace

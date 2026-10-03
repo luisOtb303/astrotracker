@@ -6,21 +6,20 @@
 
 namespace {
 
-// Gains de WB basados en temperatura Kelvin relativos a una referencia.
-// t = targetKelvin, d = detectedKelvin (referencia).
-// Más Kelvin = más cálido (R↑, B↓); identidad en t == d.
-void wbGains(float t, float d, float& rGain, float& bGain)
+// Gains de WB relativos al punto neutro (la imagen tal como sale del
+// decodificador). No hay Kelvin de por medio: warmth > 0 = más cálido (R↑, B↓).
+// En 0 las ganancias son exactamente 1 (imagen intacta).
+void wbGains(int warmth, float& rGain, float& bGain)
 {
-    if (d <= 0.f)
-        d = static_cast<float>(ImageAdjustLimits::kDefaultKelvin);
-    if (std::abs(t - d) < 0.5f) {
+    if (warmth == 0) {
         rGain = 1.f;
         bGain = 1.f;
         return;
     }
-    constexpr float kPower = 0.65f;
-    rGain = std::pow(t / d, kPower);
-    bGain = std::pow(d / t, kPower);
+    constexpr float kMaxShift = 0.45f; // tope de corrección al extremo del slider
+    const float k = static_cast<float>(warmth) / 100.f * kMaxShift;
+    rGain = 1.f + k;
+    bGain = 1.f - k * 0.85f; // B baja algo menos de lo que sube R
 }
 
 // Ganancias LP: reduce canales donde inciden sodio/mercurio.
@@ -47,7 +46,7 @@ void lpGains(float sodium, float mercury, float& rG, float& gG, float& bG)
 
 namespace img {
 
-cv::Mat apply(const cv::Mat& bgr, const ImageAdjust& adj, int detectedKelvin)
+cv::Mat apply(const cv::Mat& bgr, const ImageAdjust& adj)
 {
     if (bgr.empty() || adj.isDefault())
         return bgr.clone();
@@ -81,14 +80,10 @@ cv::Mat apply(const cv::Mat& bgr, const ImageAdjust& adj, int detectedKelvin)
         ch[0] *= lbG; // B
     }
 
-    // --- 4. WB Kelvin ---
-    if (adj.wbKelvin != 0) {
-        const float t = static_cast<float>(adj.wbKelvin);
-        const float d = detectedKelvin > 0
-                            ? static_cast<float>(detectedKelvin)
-                            : static_cast<float>(ImageAdjustLimits::kDefaultKelvin);
+    // --- 4. WB (calidez relativa al neutro) ---
+    if (adj.wbWarmth != 0) {
         float rWb, bWb;
-        wbGains(t, d, rWb, bWb);
+        wbGains(adj.wbWarmth, rWb, bWb);
         ch[2] *= rWb; // R
         ch[0] *= bWb; // B
         // G se mantiene (ganancia 1)

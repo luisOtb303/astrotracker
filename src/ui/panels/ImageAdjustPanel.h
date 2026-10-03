@@ -5,14 +5,14 @@
 #include <QWidget>
 #include <QLabel>
 #include <QSlider>
-#include <QSpinBox>
 #include <QComboBox>
 #include <QPushButton>
 #include <deque>
 
-// Dock de gestión de imagen: WB Kelvin, contaminación lumínica (sodio/mercurio),
-// reducción de ruido, exposición, brillo, contraste. Funciona tanto para la
-// pestaña Fotos (global / solo esta foto) como para Vídeo (global).
+// Dock de gestión de imagen: balance de blancos relativo (calidez), contaminación
+// lumínica (sodio/mercurio), reducción de ruido, exposición, brillo y contraste.
+// Funciona tanto para la pestaña Fotos (global / solo esta foto) como para
+// Vídeo (global).
 class ImageAdjustPanel : public QWidget
 {
     Q_OBJECT
@@ -28,10 +28,6 @@ public:
     enum class Mode { Photos, Video };
     void setMode(Mode mode);
 
-    // Para Fotos: actualiza la etiqueta "EXIF: N K" y almacena el valor
-    // detectado para que el botón "Detectar" lo use.
-    void setDetectedKelvin(int kelvin);
-
     // Borra el historial de deshacer (cambio de contexto).
     void clearHistory();
 
@@ -45,7 +41,6 @@ signals:
 
 private slots:
     void onWbSliderChanged(int value);
-    void onWbSpinChanged(int value);
     void onSodiumChanged(int value);
     void onMercuryChanged(int value);
     void onExposureChanged(int value);
@@ -53,25 +48,26 @@ private slots:
     void onContrastChanged(int value);
     void onDenoiseChanged(int value);
     void onResetClicked();
-    void onDetectWbClicked();
+    void onCenterWarmthClicked();
     void onUndoClicked();
     void onScopeChanged(int index);
 
 private:
-    void blockSignals_(bool block);
-    void updateWbLabel();
-    void syncSpinFromSlider();
+    void updateWarmthLabel();
+    // Empuja el estado previo como punto de restauración de "Deshacer".
     void pushUndo();
-    void applyInternal(const ImageAdjust& adj);
+    // Confirma el cambio actual como punto de deshacer, salvo si viene de un
+    // arrastre en curso (esos se confirman al soltar, uno por gesto).
+    void noteEdit();
+    // Conecta un slider al historial por arrastre.
+    void installSliderUndo(QSlider* slider);
 
     Mode mode_ = Mode::Photos;
 
     QComboBox* scopeCombo_ = nullptr;
-    QLabel* wbDetectedLabel_ = nullptr;
     QSlider* wbSlider_ = nullptr;
-    QSpinBox* wbSpin_ = nullptr;
     QLabel* wbValueLabel_ = nullptr;
-    QPushButton* detectWbBtn_ = nullptr;
+    QPushButton* centerWarmthBtn_ = nullptr;
 
     QSlider* sodiumSlider_ = nullptr;
     QLabel* sodiumValueLabel_ = nullptr;
@@ -94,11 +90,10 @@ private:
     QPushButton* resetBtn_ = nullptr;
     QPushButton* undoBtn_ = nullptr;
 
-    int detectedKelvin_ = 0;
-
     // Undo (bounded deque, ~30 entries).
     static constexpr size_t kMaxUndo = 30;
     std::deque<ImageAdjust> undoDeque_;
     ImageAdjust lastState_;
     bool suppressUndo_ = false;
+    bool dragging_ = false;
 };

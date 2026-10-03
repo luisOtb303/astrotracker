@@ -2,6 +2,7 @@
 
 #include "common/ImageAdjust.h"
 #include "export/PipelineWorker.h"
+#include "processing/AdjustWorker.h"
 #include "processing/Pipeline.h"
 #include "stills/PhotoProject.h"
 
@@ -97,6 +98,9 @@ private:
     void rememberVideoPath(const QString& path);
     void showCurrentFrame();
     void presentFrame(const Frame& frame);
+    void requestVideoAdjustPreview();
+    void onVideoAdjusted(const cv::Mat& out, quint64 seq);
+    void ensureVideoAdjustWorker();
     void updateTrackCircle(int64_t frameIndex);
     void updateTransportUi();
     void updateStabilizationUi();
@@ -182,6 +186,13 @@ private:
     QDockWidget* imgDock_ = nullptr;
     QAction* imgDockAction_ = nullptr;
     ImageAdjust videoAdjust_;
+    // Carpeta de la última exportación de vídeo, para abrirla al terminar.
+    QString lastExportFolder_;
+    bool openFolderAfterExport_ = false;
+    // Worker de ajustes del visor derecho: el denoise no debe congelar la UI.
+    AdjustWorker* videoAdjustWorker_ = nullptr;
+    quint64 videoAdjustSeq_ = 0;
+    int64_t currentFrameIndex_ = 0;
 
     std::unique_ptr<IVideoReader> reader_;
     QString inPath_;

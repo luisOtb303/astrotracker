@@ -109,9 +109,12 @@ void PhotoExportWorker::run()
     }
 
     const bool toVideo = settings_.format == Format::Mp4;
+    const QString stem = settings_.baseName.isEmpty() ? QStringLiteral("centrada")
+                                                     : settings_.baseName;
     const QString outDesc = toVideo ? settings_.outFile
                                     : QDir(settings_.outDir).filePath(
-                                          QStringLiteral("centrada_0000.%1")
+                                          QStringLiteral("%1_0000.%2")
+                                              .arg(stem)
                                               .arg(settings_.format == Format::Png ? QStringLiteral("png")
                                                                                    : QStringLiteral("jpg")));
     AppLog::info(QStringLiteral("Exportando %1 fotos como %2 → %3")
@@ -193,8 +196,7 @@ void PhotoExportWorker::run()
         const auto it = settings_.photoAdjusts.find(static_cast<int>(i));
         if (it != settings_.photoAdjusts.end())
             adj = it->second;
-        const int detectedK = reader.exifInfo(i).colorTempK;
-        work = img::apply(work, adj, detectedK);
+        work = img::apply(work, adj);
 
         // Centrado igual que el visor; las fotos sin resultado válido se
         // exportan sin desplazar (regla: nunca descartar frames).
@@ -256,7 +258,11 @@ void PhotoExportWorker::run()
             AppLog::info(QStringLiteral("  frame %1/%2 → vídeo").arg(i + 1).arg(n));
         } else {
             out = fitToCanvas(out, canvas);
-            const QString name = QStringLiteral("centrada_%1.%2")
+            const QString stem = settings_.baseName.isEmpty()
+                                     ? QStringLiteral("centrada")
+                                     : settings_.baseName;
+            const QString name = QStringLiteral("%1_%2.%3")
+                                     .arg(stem)
                                      .arg(static_cast<long long>(i), 4, 10, QLatin1Char('0'))
                                      .arg(settings_.format == Format::Png ? QStringLiteral("png")
                                                                           : QStringLiteral("jpg"));

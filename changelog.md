@@ -7,11 +7,45 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-03
+
 ### Added
 
 - **Asociación de archivos `.atracker`**: el instalador NSIS registra la asociación
   con Windows para que el doble click abra directamente el proyecto en AstroTracker.
   Se desinstala limpiamente.
+- **Deshacer en todos los ajustes**: el botón *Deshacer* (y `Ctrl+Z`) recupera el
+  valor anterior de cualquier parámetro, no solo del balance de blancos. Un gesto
+  de arrastre cuenta como un solo paso.
+- **Exportar junto al origen**: fotos y vídeos se guardan por defecto en la misma
+  carpeta que el original, con el nombre `AAAAMMDD_HHmm_` seguido del nombre del
+  archivo o carpeta de origen. Hay un botón *Usar carpeta del origen* para volver
+  a ello tras cambiar el destino. Los proyectos v0.5.0 no se ven afectados.
+- **Abrir carpeta al terminar**: casilla opcional (desmarcada por defecto) en los
+  diálogos de exportación de fotos y vídeo.
+- **Desplazamiento con zoom**: en la vista dividida se puede mover la imagen
+  ampliada con `Ctrl` + arrastre izquierdo; en la vista del resultado también con
+  el botón izquierdo. La rueda hace zoom sobre el punto del cursor.
+
+### Changed
+
+- **Balance de blancos relativo**: el control es ahora un deslizador centrado
+  (`Frío ← Neutro → Cálido`) donde `0` deja la foto tal como sale de la cámara.
+  Se eliminan el valor en Kelvin y el botón *Detectar* (el EXIF casi nunca trae
+  la temperatura real y el decodificador ya aplica su propia corrección). Los
+  proyectos v0.5.0 se migran automáticamente al abrirse.
+- **Los ajustes ya no congelan la ventana**: la reducción de ruido se aplica en un
+  hilo aparte, así que se puede mover el deslizador sin que la interfaz se quede
+  bloqueada. Las peticiones se agrupan para no encolar trabajo de más.
+
+### Fixed
+
+- *Restablecer todo* ya devuelve los siete parámetros a su valor neutro y vacía el
+  historial de deshacer; antes la respuesta se notaba lenta por el denoise.
+- Los archivos exportados ya no se pisan entre sí: el nombre incluye la fecha y
+  hora de la exportación junto al nombre del origen.
+
+## [0.5.0] - 2026-09-16
 
 ## [0.5.0] - 2026-09-16
 
