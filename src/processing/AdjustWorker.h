@@ -31,6 +31,15 @@ public:
     // llamante pueda reutilizar su cv::Mat.
     void setSource(const cv::Mat& src);
 
+    // Mapa de píxeles calientes confirmado fotograma a fotograma (HotPixelMap).
+    // Se usa en lugar de la detección espacial cuando está disponible. Vacío =
+    // solo detección espacial.
+    //
+    // No dispara el reprocesado por sí mismo: quien cambia el mapa llama a
+    // request() con los ajustes vigentes, que es lo que invalida el resultado en
+    // vuelo de la petición anterior.
+    void setHotMask(const cv::Mat& mask);
+
     // Pide reprocesar con estos ajustes. Devuelve false si el ajuste es
     // identidad y no hay nada que hacer.
     //
@@ -72,6 +81,7 @@ private:
     QWaitCondition cond_;
 
     cv::Mat source_;
+    cv::Mat hotMask_;
     ImageAdjust requested_;
     bool hasRequested_ = false;
     quint64 requestSeq_ = 0;

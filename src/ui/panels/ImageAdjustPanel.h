@@ -3,6 +3,7 @@
 #include "common/ImageAdjust.h"
 
 #include <QWidget>
+#include <QCheckBox>
 #include <QLabel>
 #include <QSlider>
 #include <QComboBox>
@@ -28,6 +29,15 @@ public:
     enum class Mode { Photos, Video };
     void setMode(Mode mode);
 
+    // Estado del análisis temporal: refleja el progreso y el resultado en el
+    // panel. `ok` con hotCount = 0 significa "no hay defects en este vídeo".
+    void setHotScanRunning(bool running, int sampled = 0, int planned = 0);
+    void setHotScanResult(bool ok, int hotCount, int sampled, const QString& error = {},
+                          bool cancelled = false);
+    void setHotScanError(const QString& error);
+    // Limpia el mensaje de estado (cambio de vídeo, cierre de la pestaña).
+    void clearHotScanStatus();
+
     // Borra el historial de deshacer (cambio de contexto).
     void clearHistory();
 
@@ -38,6 +48,9 @@ signals:
     void resetRequested();
     // El usuario cambió el alcance (Todas/Solo esta foto).
     void scopeChanged(bool perPhoto);
+    // El usuario pidió analizar el vídeo en busca de píxeles calientes. Solo en
+    // modo Vídeo; con fotos no hay con qué comparar y el botón no se muestra.
+    void analyzeHotPixelsRequested();
 
 private slots:
     void onWbSliderChanged(int value);
@@ -47,6 +60,9 @@ private slots:
     void onBrightnessChanged(int value);
     void onContrastChanged(int value);
     void onDenoiseChanged(int value);
+    void onHotToggled(bool checked);
+    void onHotSensitivityChanged(int value);
+    void onAnalyzeHotClicked();
     void onResetClicked();
     void onCenterWarmthClicked();
     void onUndoClicked();
@@ -77,6 +93,12 @@ private:
 
     QSlider* denoiseSlider_ = nullptr;
     QLabel* denoiseValueLabel_ = nullptr;
+
+    QCheckBox* hotCheck_ = nullptr;
+    QSlider* hotSensitivitySlider_ = nullptr;
+    QLabel* hotSensitivityLabel_ = nullptr;
+    QPushButton* hotAnalyzeBtn_ = nullptr;
+    QLabel* hotStatusLabel_ = nullptr;
 
     QSlider* exposureSlider_ = nullptr;
     QLabel* exposureValueLabel_ = nullptr;

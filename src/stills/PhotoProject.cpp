@@ -33,6 +33,24 @@ namespace {
 
 // Lee un objeto "ajuste" del JSON. El WB se guarda como desplazamiento relativo
 // ("wbOffset", -100..100); los proyectos v0.5.0 usaban "wbK" (Kelvin absoluto
+// Serialización de un ajuste. Centralizada para que las tres rutas (ajuste
+// global de fotos, ajuste por foto y ajuste de vídeo) no se desincronicen al
+// añadir parámetros.
+QJsonObject encodeAdjust(const ImageAdjust& a)
+{
+    QJsonObject aj;
+    aj.insert(QStringLiteral("wbOffset"), a.wbWarmth);
+    aj.insert(QStringLiteral("lpSodio"), a.lpSodium);
+    aj.insert(QStringLiteral("lpMercurio"), a.lpMercury);
+    aj.insert(QStringLiteral("ev"), a.exposureEv);
+    aj.insert(QStringLiteral("brillo"), a.brightness);
+    aj.insert(QStringLiteral("contraste"), a.contrast);
+    aj.insert(QStringLiteral("ruido"), a.denoise);
+    aj.insert(QStringLiteral("pixelesCalientes"), a.hotPixels);
+    aj.insert(QStringLiteral("sensCalientes"), a.hotSensitivity);
+    return aj;
+}
+
 // con 11250 como neutro) y se migran aproximando el mismo efecto.
 ImageAdjust decodeAdjust(const QJsonObject& aj)
 {
@@ -54,6 +72,11 @@ ImageAdjust decodeAdjust(const QJsonObject& aj)
     a.brightness = static_cast<int>(aj.value(QLatin1String("brillo")).toInt(0));
     a.contrast = static_cast<int>(aj.value(QLatin1String("contraste")).toInt(0));
     a.denoise = static_cast<int>(aj.value(QLatin1String("ruido")).toInt(0));
+    a.hotPixels = aj.value(QLatin1String("pixelesCalientes")).toBool(false);
+    a.hotSensitivity = qBound(ImageAdjustLimits::kMinHotSensitivity,
+                              static_cast<int>(
+                                  aj.value(QLatin1String("sensCalientes")).toInt(50)),
+                              ImageAdjustLimits::kMaxHotSensitivity);
     return a;
 }
 
@@ -96,30 +119,14 @@ QJsonObject encodePhotos(const PhotoProjectPhotos& p)
         o.insert(QStringLiteral("semilla"), s);
     }
     if (!p.adjust.isDefault()) {
-        QJsonObject aj;
-        aj.insert(QStringLiteral("wbOffset"), p.adjust.wbWarmth);
-        aj.insert(QStringLiteral("lpSodio"), p.adjust.lpSodium);
-        aj.insert(QStringLiteral("lpMercurio"), p.adjust.lpMercury);
-        aj.insert(QStringLiteral("ev"), p.adjust.exposureEv);
-        aj.insert(QStringLiteral("brillo"), p.adjust.brightness);
-        aj.insert(QStringLiteral("contraste"), p.adjust.contrast);
-        aj.insert(QStringLiteral("ruido"), p.adjust.denoise);
-        o.insert(QStringLiteral("ajuste"), aj);
+        o.insert(QStringLiteral("ajuste"), encodeAdjust(p.adjust));
     }
     if (!p.adjustOverrides.empty()) {
         QJsonArray overrides;
         for (const auto& [idx, adj] : p.adjustOverrides) {
             QJsonObject e;
             e.insert(QStringLiteral("indice"), idx);
-            QJsonObject aj;
-            aj.insert(QStringLiteral("wbOffset"), adj.wbWarmth);
-            aj.insert(QStringLiteral("lpSodio"), adj.lpSodium);
-            aj.insert(QStringLiteral("lpMercurio"), adj.lpMercury);
-            aj.insert(QStringLiteral("ev"), adj.exposureEv);
-            aj.insert(QStringLiteral("brillo"), adj.brightness);
-            aj.insert(QStringLiteral("contraste"), adj.contrast);
-            aj.insert(QStringLiteral("ruido"), adj.denoise);
-            e.insert(QStringLiteral("ajuste"), aj);
+            e.insert(QStringLiteral("ajuste"), encodeAdjust(adj));
             overrides.append(e);
         }
         o.insert(QStringLiteral("ajustesFotos"), overrides);
@@ -167,15 +174,7 @@ QJsonObject encodeVideo(const PhotoProjectVideo& v)
     o.insert(QStringLiteral("suavizado"), v.smoothingAlpha);
     o.insert(QStringLiteral("borde"), v.borderMode);
     if (!v.adjust.isDefault()) {
-        QJsonObject aj;
-        aj.insert(QStringLiteral("wbOffset"), v.adjust.wbWarmth);
-        aj.insert(QStringLiteral("lpSodio"), v.adjust.lpSodium);
-        aj.insert(QStringLiteral("lpMercurio"), v.adjust.lpMercury);
-        aj.insert(QStringLiteral("ev"), v.adjust.exposureEv);
-        aj.insert(QStringLiteral("brillo"), v.adjust.brightness);
-        aj.insert(QStringLiteral("contraste"), v.adjust.contrast);
-        aj.insert(QStringLiteral("ruido"), v.adjust.denoise);
-        o.insert(QStringLiteral("ajuste"), aj);
+        o.insert(QStringLiteral("ajuste"), encodeAdjust(v.adjust));
     }
     return o;
 }

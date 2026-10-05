@@ -153,7 +153,9 @@ void VideoExportWorker::run()
                                                : QStringLiteral(" → centrando")));
 
         cv::Mat work = toBgr8(frame.image);
-        work = img::apply(work, settings_.adjust);
+        // El ajuste va ANTES del centrado: la máscara de píxeles calientes está
+        // en coordenadas del frame original y el BorderHandler la desplazaría.
+        work = img::apply(work, settings_.adjust, settings_.hotMask);
         cv::Mat out;
         if (!offsets_.empty() && frameIndex < static_cast<int64_t>(offsets_.size())) {
             const cv::Point2f off = offsets_[static_cast<size_t>(frameIndex)] * offScale;

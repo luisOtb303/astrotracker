@@ -3,6 +3,7 @@
 #include "common/ImageAdjust.h"
 #include "export/PipelineWorker.h"
 #include "processing/AdjustWorker.h"
+#include "processing/HotPixelMap.h"
 #include "processing/Pipeline.h"
 #include "stills/PhotoProject.h"
 
@@ -16,6 +17,7 @@ class VideoView;
 class PhotoPanel;
 class IVideoReader;
 class VideoExportWorker;
+class HotPixelScanWorker;
 class QTimer;
 class QAction;
 class QMenu;
@@ -109,6 +111,11 @@ private:
     void requestVideoAdjustPreview();
     void onVideoAdjusted(const cv::Mat& out, quint64 seq);
     void ensureVideoAdjustWorker();
+    // Análisis temporal de píxeles calientes. Va en su propio hilo con un
+    // lector propio: no toca reader_ y no mueve la posición del visor.
+    void onAnalyzeHotPixels();
+    void onHotScanFinished(const HotPixelMap::Result& result);
+    void stopHotScan();
     void updateTrackCircle(int64_t frameIndex);
     void updateTransportUi();
     void updateStabilizationUi();
@@ -199,6 +206,11 @@ private:
     bool openFolderAfterExport_ = false;
     // Worker de ajustes del visor derecho: el denoise no debe congelar la UI.
     AdjustWorker* videoAdjustWorker_ = nullptr;
+    // Mapa de píxeles calientes detectado sobre el vídeo abierto (CV_8U, tamaño
+    // del frame original). Se recalcula solo si el usuario lo pide y se descarta
+    // al abrir otro vídeo: las posiciones no valen para otro fichero.
+    cv::Mat videoHotMask_;
+    HotPixelScanWorker* hotScanWorker_ = nullptr;
     int64_t currentFrameIndex_ = 0;
 
     std::unique_ptr<IVideoReader> reader_;

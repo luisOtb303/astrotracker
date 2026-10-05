@@ -9,6 +9,7 @@
 #include <QThread>
 #include <atomic>
 #include <map>
+#include <opencv2/core.hpp>
 #include <vector>
 
 // Worker en hilo separado que exporta las fotos ya centradas (resultado del
@@ -33,6 +34,12 @@ public:
         bool normalizeBrightness = true; // suaviza el parpadeo entre fotos (MP4)
         ImageAdjust adjust;      // ajuste global de imagen
         std::map<int, ImageAdjust> photoAdjusts; // overrides por foto
+        // Mapa de píxeles calientes (HotPixelMap) en coordenadas del frame
+        // original. Solo lo usa la exportación de vídeo; si viene vacío se
+        // aplica solo la detección espacial de ImageAdjust::hotPixels.
+        //
+        // Solo para fotos: la temporally necesita comparar fotogramas.
+        cv::Mat hotMask;
         QString outDir;          // imágenes
         QString outFile;         // mp4
         // Prefijo de los nombres generados (timestamp + nombre del origen).

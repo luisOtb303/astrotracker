@@ -891,6 +891,16 @@ void PhotoPanel::ensureAdjustWorker()
 void PhotoPanel::requestAdjustPreview()
 {
     ensureAdjustWorker();
+
+    // El filtro de píxeles calientes no es un ajuste de imagen: se aplica sobre
+    // el mosaico, dentro de la decodificación del RAW. Si su estado cambia hay
+    // que volver a LEER la foto (la caché de análisis tiene una entrada por
+    // agresividad), no solo reprocesar el mismo frame.
+    if (applyHotSettingsToReader()) {
+        refreshView();
+        return;
+    }
+
     // El worker necesita el frame crudo actual, no el procesado.
     if (rawFrameIndex_ != current_ || rawFrame_.empty()) {
         // Foto aun no cargada: refreshView la pedira cuando llegue.
@@ -921,6 +931,25 @@ ImageAdjust PhotoPanel::effectiveAdjust() const
     const int key = static_cast<int>(current_);
     const auto it = photoAdjusts_.find(key);
     return (it != photoAdjusts_.end()) ? it->second : globalAdjust_;
+}
+
+bool PhotoPanel::applyHotSettingsToReader()
+{
+    const ImageAdjust adj = effectiveAdjust();
+    RawDecoder::HotSettings hot;
+    hot.enabled = adj.hotPixels;
+    hot.params.k = ImageAdjustLimits::hotSensitivityToSigma(adj.hotSensitivity);
+
+    // Solo importa si el umbral cambia de verdad: así el debounce agrupa los
+    // arrastres del deslizador en una sola relectura en lugar de una por pixel.
+    const int k = static_cast<int>(std::lround(hot.params.k));
+    if (hot.enabled == hotReaderEnabled_ && (!hot.enabled || k == hotReaderK_))
+        return false;
+
+    hotReaderEnabled_ = hot.enabled;
+    hotReaderK_ = k;
+    reader_.setHotSettings(hot);
+    return true;
 }
 
 void PhotoPanel::onScopeChanged(bool perPhoto)

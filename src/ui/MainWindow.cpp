@@ -14,6 +14,7 @@
 #include "ui/timeline/TimelineWidget.h"
 #include "video/IVideoReader.h"
 #include "video/FFmpegVideoReader.h"
+#include "processing/HotPixelScanWorker.h"
 #include "stills/VideoExportWorker.h"
 #include "processing/FrameTransformer.h"
 #include "tracking/DiscArcFit.h"
@@ -378,6 +379,8 @@ void MainWindow::setupUi()
     });
     connect(imgPanel_, &ImageAdjustPanel::scopeChanged,
             photosPanel_, &PhotoPanel::onScopeChanged);
+    connect(imgPanel_, &ImageAdjustPanel::analyzeHotPixelsRequested,
+            this, &MainWindow::onAnalyzeHotPixels);
 
     // PhotoPanel necesita un puntero a imgPanel_ para sincronizar ajustes.
     photosPanel_->setImageAdjustPanel(imgPanel_);
@@ -769,6 +772,11 @@ void MainWindow::openPath(const QString& path)
 
     inPath_ = path;
     reader_ = std::move(reader);
+    // El mapa de píxeles calientes pertenece a este fichero: las posiciones no
+    // valen para otro vídeo, así que se descarta y hay que volver a analizar.
+    videoHotMask_ = cv::Mat();
+    if (imgPanel_)
+        imgPanel_->clearHotScanStatus();
     totalUs_ = reader_->durationUs();
     totalFrames_ = reader_->frameCount();
     {
@@ -844,12 +852,62 @@ void MainWindow::requestVideoAdjustPreview()
     if (currentFrameImage_.empty())
         return;
     videoAdjustWorker_->setSource(currentFrameImage_);
+    // setSource() invalida el mapa (el frame de referencia ha cambiado), así que
+    // hay que volver a pasarlo en cada repintado, no solo cuando se analiza.
+    videoAdjustWorker_->setHotMask(videoHotMask_);
     if (videoAdjustWorker_->request(videoAdjust_)) {
         // El worker responderá con el frame ya ajustado.
         return;
     }
     // Ajuste identidad: se muestra el frame tal cual, sin pasar por el hilo.
     resultView_->setFrame(displayFrame(currentFrameImage_, currentFrameIndex_));
+}
+
+void MainWindow::onAnalyzeHotPixels()
+{
+    if (!reader_ || inPath_.isEmpty()) {
+        imgPanel_->setHotScanError(tr("Abre un vídeo antes de analizar."));
+        return;
+    }
+    if (!hotScanWorker_) {
+        hotScanWorker_ = new HotPixelScanWorker(this);
+        connect(hotScanWorker_, &HotPixelScanWorker::progress, this,
+                [this](int sampled, int planned) {
+                    imgPanel_->setHotScanRunning(true, sampled, planned);
+                });
+        connect(hotScanWorker_, &HotPixelScanWorker::finished, this,
+                &MainWindow::onHotScanFinished);
+        connect(hotScanWorker_, &QThread::finished, hotScanWorker_, &QObject::deleteLater);
+    }
+
+    // El análisis usa un lector propio, así que el visor puede seguir en el
+    // frame que el usuario tenía. Aun así se guarda la posición por si al
+    // terminar hay que repintar.
+    HotPixelMap::Options opts;
+    opts.sensitivity = videoAdjust_.hotSensitivity;
+    imgPanel_->setHotScanRunning(true, 0, opts.sampleCount);
+    if (!hotScanWorker_->startScan(inPath_, opts))
+        imgPanel_->setHotScanError(tr("Ya hay un análisis en curso."));
+}
+
+void MainWindow::stopHotScan()
+{
+    if (hotScanWorker_)
+        hotScanWorker_->cancel();
+}
+
+void MainWindow::onHotScanFinished(const HotPixelMap::Result& result)
+{
+    imgPanel_->setHotScanResult(result.ok, result.hotCount, result.sampled,
+                                result.error, result.cancelled);
+    if (!result.ok)
+        return;
+
+    videoHotMask_ = result.mask;
+    // Si el usuario no ha marcado la casilla, el mapa se guarda pero no se
+    // aplica: el panel lo dice, y activarla es un clic.
+    if (videoAdjust_.hotPixels)
+        refreshCurrentFrame();
 }
 
 void MainWindow::onVideoAdjusted(const cv::Mat& out, quint64 seq)
@@ -1301,6 +1359,7 @@ void MainWindow::runExportDialog(bool toVideo)
     st.interp = interpCombo->currentData().toInt();
     st.normalizeBrightness = brightChk->isChecked();
     st.adjust = videoAdjust_;
+    st.hotMask = videoHotMask_;
 
     const std::vector<cv::Point2f> exportOffsets =
         (centeredRadio->isChecked() && !offsets_.empty()) ? offsets_

@@ -174,6 +174,8 @@ add_executable(test_stills test_stills/main.cpp
   ../src/stills/ExifReader.cpp
   ../src/raw/RawDecoder.h
   ../src/raw/RawDecoder.cpp
+  ../src/raw/BayerHotPixels.h
+  ../src/raw/BayerHotPixels.cpp
   ../src/raw/RawExifReader.h
   ../src/raw/RawExifReader.cpp)
 
@@ -188,24 +190,36 @@ add_test(NAME test_stills COMMAND test_stills)
 
 add_executable(test_raw test_raw/main.cpp
   ../src/raw/RawDecoder.h
-  ../src/raw/RawDecoder.cpp)
+  ../src/raw/RawDecoder.cpp
+  ../src/raw/BayerHotPixels.h
+  ../src/raw/BayerHotPixels.cpp)
 
 target_include_directories(test_raw PRIVATE ../src)
 target_compile_definitions(test_raw PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(test_raw PRIVATE ${OpenCV_LIBS} libraw)
 
-set(RAW_SAMPLES
+# Muestras de decode. Las de testdata/hotpixel llevan ademas pixeles quemados
+# reales, asi que el test exige que el filtro corrija algo en ellas; las de
+# testdata/raw solo tienen que salir intactas.
+set(_raw_samples
   ${CMAKE_SOURCE_DIR}/testdata/raw/canon_40d_sraw2.CR2
-  ${CMAKE_SOURCE_DIR}/testdata/raw/canon_r6.CR3)
+  ${CMAKE_SOURCE_DIR}/testdata/raw/canon_r6.CR3
+  ${CMAKE_SOURCE_DIR}/testdata/hotpixel/IMG_5633.CR2
+  ${CMAKE_SOURCE_DIR}/testdata/hotpixel/IMG_6174.CR2)
 
-set(_samples_verified TRUE)
-foreach(_s IN LISTS RAW_SAMPLES)
-  if(NOT EXISTS ${_s})
-    set(_samples_verified FALSE)
+# Cada muestra se carga solo si esta en disco. Los RAW de testdata/hotpixel son
+# material de trabajo grande y pueden no estar presentes; test_raw deduce de la
+# ruta si espera correcciones, asi que un subconjunto sigue siendo valido.
+# Registrar el test "todo o nada" perderia la cobertura de las muestras que si
+# existen.
+set(RAW_SAMPLES)
+foreach(_s IN LISTS _raw_samples)
+  if(EXISTS ${_s})
+    list(APPEND RAW_SAMPLES ${_s})
   endif()
 endforeach()
 
-if(_samples_verified)
+if(RAW_SAMPLES)
   add_test(NAME test_raw COMMAND test_raw ${RAW_SAMPLES})
 endif()
 
@@ -273,6 +287,35 @@ target_link_libraries(test_imadjust PRIVATE ${OpenCV_LIBS})
 
 add_test(NAME test_imadjust COMMAND test_imadjust)
 
+# Filtro de píxeles calientes sobre el mosaico Bayer: detección, corrección,
+# invariancia de fase CFA, aislamiento y guardas sobre mosaicos no Bayer.
+
+add_executable(test_bayerhot test_bayerhot/main.cpp
+  ../src/raw/BayerHotPixels.h
+  ../src/raw/BayerHotPixels.cpp)
+
+target_include_directories(test_bayerhot PRIVATE ../src)
+target_compile_definitions(test_bayerhot PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_bayerhot PRIVATE ${OpenCV_LIBS})
+
+add_test(NAME test_bayerhot COMMAND test_bayerhot)
+
+# Detector TEMPORAL de píxeles calientes sobre vídeo: separa los quemados fijos
+# de una estrella que se mueve, con un IVideoReader sintético.
+
+add_executable(test_hotpixels test_hotpixels/main.cpp
+  ../src/processing/HotPixelMap.h
+  ../src/processing/HotPixelMap.cpp
+  ../src/common/ImageAdjust.h
+  ../src/common/ImageAdjust.cpp
+  ../src/video/IVideoReader.h)
+
+target_include_directories(test_hotpixels PRIVATE ../src)
+target_compile_definitions(test_hotpixels PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(test_hotpixels PRIVATE Qt6::Core ${OpenCV_LIBS})
+
+add_test(NAME test_hotpixels COMMAND test_hotpixels)
+
 # Verificación local opcional con CR2 reales de un eclipse (testdata/eclipse/,
 # excluido del repo). Si la carpeta no existe, el test se omite.
 
@@ -281,6 +324,8 @@ add_executable(test_eclipse test_eclipse/main.cpp
   ../src/stills/PhotoSequenceReader.cpp
   ../src/raw/RawDecoder.h
   ../src/raw/RawDecoder.cpp
+  ../src/raw/BayerHotPixels.h
+  ../src/raw/BayerHotPixels.cpp
   ../src/raw/RawExifReader.h
   ../src/raw/RawExifReader.cpp
   ../src/motion/TrackStatus.h
@@ -348,6 +393,8 @@ add_executable(test_export test_export/main.cpp
   ../src/stills/PhotoSequenceReader.cpp
   ../src/raw/RawDecoder.h
   ../src/raw/RawDecoder.cpp
+  ../src/raw/BayerHotPixels.h
+  ../src/raw/BayerHotPixels.cpp
   ../src/raw/RawExifReader.h
   ../src/raw/RawExifReader.cpp
   ../src/motion/TrackStatus.h

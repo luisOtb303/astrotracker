@@ -70,6 +70,10 @@ public:
 
     // Ajuste efectivo para la foto actual (override o global).
     ImageAdjust effectiveAdjust() const;
+    // Propaga el filtro de píxeles calientes al lector. Devuelve true si han
+    // cambiado los ajustes y por tanto hay que releer la foto desde disco (el
+    // filtro va en la decodificación del RAW, no en el ajuste posterior).
+    bool applyHotSettingsToReader();
     // Restablece los ajustes de imagen a los valores por defecto.
     void resetImageAdjust();
     // Sincroniza el panel de ajuste con la foto actual (llamar al cambiar de foto).
@@ -184,6 +188,10 @@ private:
     bool scopePerPhoto_ = false;
     // Cache del frame raw actual para refresh sin re-leer disco.
     cv::Mat rawFrame_;
+    // Último filtro de píxeles calientes propagado al lector, para no releer
+    // la foto si el ajuste no ha cambiado de verdad.
+    bool hotReaderEnabled_ = false;
+    int hotReaderK_ = -1;
     // Ultimo frame ya ajustado por el worker; vacio = usar el crudo tal cual.
     cv::Mat processedFrame_;
     int64_t rawFrameIndex_ = -1;

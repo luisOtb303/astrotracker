@@ -8,6 +8,7 @@ out/
 bin/
 *.log
 testdata/eclipse/
+testdata/hotpixel/
 tests/test_lunar_eclipse_video/
 
 # Credenciales y secretos (profiláctico: no debe aparecer ninguno en el repo)
@@ -20,6 +21,10 @@ tests/test_lunar_eclipse_video/
 *.crt
 *.cer
 *.p7b
+
+# Caché de Python (scripts de research/)
+__pycache__/
+*.pyc
 
 # Símbolos de depuración, dumps y temporales
 *.pdb

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(AstroTracker VERSION 0.6.0 LANGUAGES CXX)
+project(AstroTracker VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -143,6 +143,10 @@ add_executable(astrotracker WIN32
   src/processing/Pipeline.cpp
   src/processing/AdjustWorker.h
   src/processing/AdjustWorker.cpp
+  src/processing/HotPixelMap.h
+  src/processing/HotPixelMap.cpp
+  src/processing/HotPixelScanWorker.h
+  src/processing/HotPixelScanWorker.cpp
   src/common/ExportNaming.h
   src/common/ExportNaming.cpp
   src/export/ExportJob.h
@@ -163,6 +167,8 @@ add_executable(astrotracker WIN32
   src/stills/VideoExportWorker.cpp
   src/raw/RawDecoder.h
   src/raw/RawDecoder.cpp
+  src/raw/BayerHotPixels.h
+  src/raw/BayerHotPixels.cpp
   src/raw/RawExifReader.h
   src/raw/RawExifReader.cpp
   src/ui/PhotoPanel.h

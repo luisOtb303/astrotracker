@@ -11,6 +11,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -102,11 +103,13 @@ bool PhotoSequenceReader::readAt(int64_t idx, cv::Mat& out, int maxDim) const
 
     // RAW: decodificación media (rápida) y caché de análisis en disco; la
     // primera lectura genera el JPG pequeño y las siguientes salen de él.
+    // El filtro de píxeles calientes va aquí y no en el ajuste posterior porque
+    // necesita el mosaico: se aplica dentro de decode(), antes de demosaicar.
     if (isRawExt(path)) {
         if (maxDim > 0 && loadCachedAnalysis(path, maxDim, out))
             return true;
         cv::Mat m;
-        if (!RawDecoder::decode(path, m, true, maxDim))
+        if (!RawDecoder::decode(path, m, true, maxDim, hot_))
             return false;
         toBgr8Faithful(m);
         if (maxDim > 0)
@@ -136,7 +139,7 @@ bool PhotoSequenceReader::readFullRes(int64_t idx, cv::Mat& out) const
         return false;
     const std::string& path = paths_[static_cast<size_t>(idx)];
     if (isRawExt(path))
-        return RawDecoder::decode(path, out, true);
+        return RawDecoder::decode(path, out, true, 0, hot_);
     out = cv::imread(path, cv::IMREAD_UNCHANGED);
     return !out.empty();
 }
@@ -199,6 +202,10 @@ void PhotoSequenceReader::initAnalysisCache()
 // original; si la foto cambia, cambia el nombre y la entrada vieja se olvida.
 // El prefijo de versión invalida en bloque las entradas generadas con un
 // procesado RAW distinto (p. ej. antes de desactivar el auto-brillo).
+//
+// El filtro de píxeles calientes forma parte de la decodificación, así que su
+// estado y su umbral entran también en la clave: sin esto, mover el deslizador
+// devolvería la entrada cacheada de otra agresividad y el preview no cambiaría.
 std::string PhotoSequenceReader::cacheEntryPath(const std::string& srcPath,
                                                 int maxDim) const
 {
@@ -213,10 +220,17 @@ std::string PhotoSequenceReader::cacheEntryPath(const std::string& srcPath,
     std::string ext = p.extension().string();
     for (char& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    // "off" con el check apagado; si está activo, el umbral redondeado. Se
+    // redondea porque el detector solo depende de k a través de la comparación
+    // z > k, y unas centésimas no cambian ninguna decisión.
+    const std::string hp = hot_.enabled
+                               ? "hp" + std::to_string(
+                                         static_cast<int>(std::lround(hot_.params.k)))
+                               : std::string("hpoff");
     fs::path entry =
         fs::path(analysisCacheDir_) /
-        ("v2." + p.stem().string() + ext + "." + std::to_string(mtime) +
-         "." + std::to_string(size) + "." + std::to_string(maxDim) + ".jpg");
+        ("v3." + p.stem().string() + ext + "." + std::to_string(mtime) + "." +
+         std::to_string(size) + "." + std::to_string(maxDim) + "." + hp + ".jpg");
     return entry.string();
 }
 

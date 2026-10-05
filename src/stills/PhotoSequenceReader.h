@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/PhotoExifInfo.h"
+#include "raw/RawDecoder.h"
 #include <opencv2/core.hpp>
 #include <mutex>
 #include <string>
@@ -12,12 +13,22 @@
 // Cada foto se decodifica bajo demanda; no se retiene nada en memoria.
 // Los RAW usan además una caché de análisis en disco (_astrotracker_cache/
 // junto a las fotos): la primera lectura genera un JPG pequeño y las demás
-// salen de él (navegación, miniaturas y cálculo mucho más rápidos).
+// salen de él (navegación, miniaturas y cálculo mucho más rápido).
 class PhotoSequenceReader
 {
 public:
     PhotoSequenceReader() = default;
     ~PhotoSequenceReader() = default;
+
+    // Filtro de píxeles calientes para los RAW. Como se aplica sobre el mosaico,
+    // ANTES de demosaicar, forma parte de la decodificación: el resultado cambia
+    // con estos ajustes, así que entran en la clave de la caché de análisis y
+    // cada combinación genera su propia entrada. Vacío = sin filtro.
+    //
+    // No afecta a los JPG/TIFF: sin mosaico no hay forma fiable de separar un
+    // defecto de una estrella de un solo píxel.
+    void setHotSettings(const RawDecoder::HotSettings& hot) { hot_ = hot; }
+    const RawDecoder::HotSettings& hotSettings() const { return hot_; }
 
     // Abre una lista de rutas, descartando las que no sean imágenes soportadas.
     bool open(const std::vector<std::string>& paths);
@@ -65,5 +76,6 @@ private:
     int height_ = 0;
     // Caché de análisis de RAW (vacío = desactivada).
     std::string analysisCacheDir_;
+    RawDecoder::HotSettings hot_;
     mutable std::mutex cacheMutex_;
 };

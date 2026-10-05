@@ -141,6 +141,53 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
 
     mainLayout->addWidget(denoiseGroup);
 
+    // --- Píxeles calientes ---
+    auto* hotGroup = new QGroupBox(tr("Píxeles calientes"), this);
+    auto* hotLay = new QVBoxLayout(hotGroup);
+    hotLay->setContentsMargins(8, 16, 8, 8);
+    hotLay->setSpacing(4);
+
+    hotCheck_ = new QCheckBox(tr("Corregir píxeles calientes"), hotGroup);
+    hotCheck_->setToolTip(
+        tr("Fotositos quemados del sensor: puntos aislados mucho más brillantes que "
+           "sus vecinos. En vídeo se detecta comparando varios fotogramas; en fotos "
+           "solo se puede sospechar por su vecindario, así que puede llevarte por "
+           "delante una estrella de un solo píxel."));
+    hotLay->addWidget(hotCheck_);
+
+    {
+        auto* row = new QHBoxLayout();
+        auto* lbl = new QLabel(tr("Sensibilidad"), hotGroup);
+        lbl->setMinimumWidth(80);
+        row->addWidget(lbl);
+        hotSensitivitySlider_ =
+            makeSlider(ImageAdjustLimits::kMinHotSensitivity,
+                       ImageAdjustLimits::kMaxHotSensitivity,
+                       ImageAdjustLimits::kDefaultHotSensitivity, 10, hotGroup);
+        hotSensitivitySlider_->setToolTip(
+            tr("Cuánto tiene que destacar un píxel sobre el ruido de la toma para "
+               "considerarlo quemado. Más bajo = corrige más píxeles (y más riesgo de "
+               "borrar estrellas), más alto = solo los defectos más evidentes."));
+        row->addWidget(hotSensitivitySlider_);
+        hotSensitivityLabel_ = makeValueLabel("50", hotGroup);
+        row->addWidget(hotSensitivityLabel_);
+        hotLay->addLayout(row);
+    }
+
+    hotAnalyzeBtn_ = new QPushButton(tr("Analizar vídeo"), hotGroup);
+    hotAnalyzeBtn_->setToolTip(
+        tr("Lee fotogramas repartidos por el vídeo y detecta los píxeles que se "
+           "repiten siempre en la misma posición, que es la firma de un fotosito "
+           "quemado. Las estrellas se mueven de un fotograma a otro y no se marcan."));
+    hotLay->addWidget(hotAnalyzeBtn_);
+
+    hotStatusLabel_ = new QLabel(hotGroup);
+    hotStatusLabel_->setWordWrap(true);
+    hotStatusLabel_->setStyleSheet(QStringLiteral("color: palette(mid); font-size: 11px;"));
+    hotLay->addWidget(hotStatusLabel_);
+
+    mainLayout->addWidget(hotGroup);
+
     // --- Exposición / Brillo / Contraste ---
     auto* toneGroup = new QGroupBox(tr("Tono"), this);
     auto* toneLay = new QVBoxLayout(toneGroup);
@@ -213,6 +260,11 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
     connect(sodiumSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onSodiumChanged);
     connect(mercurySlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onMercuryChanged);
     connect(denoiseSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onDenoiseChanged);
+    connect(hotCheck_, &QCheckBox::toggled, this, &ImageAdjustPanel::onHotToggled);
+    connect(hotSensitivitySlider_, &QSlider::valueChanged, this,
+            &ImageAdjustPanel::onHotSensitivityChanged);
+    connect(hotAnalyzeBtn_, &QPushButton::clicked, this,
+            &ImageAdjustPanel::onAnalyzeHotClicked);
     connect(exposureSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onExposureChanged);
     connect(brightnessSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onBrightnessChanged);
     connect(contrastSlider_, &QSlider::valueChanged, this, &ImageAdjustPanel::onContrastChanged);
@@ -223,8 +275,13 @@ ImageAdjustPanel::ImageAdjustPanel(QWidget* parent)
 
     // Historial de deshacer por arrastre: un gesto = un paso (no uno por tick).
     for (QSlider* s : {wbSlider_, sodiumSlider_, mercurySlider_, denoiseSlider_,
-                        exposureSlider_, brightnessSlider_, contrastSlider_})
+                        exposureSlider_, brightnessSlider_, contrastSlider_,
+                        hotSensitivitySlider_})
         installSliderUndo(s);
+
+    // El análisis multi-fotograma solo tiene sentido con vídeo: en fotos no hay
+    // con qué comparar y el botón solo estorbaría.
+    hotAnalyzeBtn_->setVisible(mode_ == Mode::Video);
 
     // Ocultar el alcance en modo vídeo
     scopeCombo_->setVisible(false);
@@ -237,6 +294,8 @@ ImageAdjust ImageAdjustPanel::currentAdjust() const
     a.lpSodium = sodiumSlider_->value();
     a.lpMercury = mercurySlider_->value();
     a.denoise = denoiseSlider_->value();
+    a.hotPixels = hotCheck_->isChecked();
+    a.hotSensitivity = hotSensitivitySlider_->value();
     a.exposureEv = exposureSlider_->value();
     a.brightness = brightnessSlider_->value();
     a.contrast = contrastSlider_->value();
@@ -255,6 +314,9 @@ void ImageAdjustPanel::setAdjust(const ImageAdjust& adj)
     sodiumSlider_->setValue(adj.lpSodium);
     mercurySlider_->setValue(adj.lpMercury);
     denoiseSlider_->setValue(adj.denoise);
+    hotCheck_->setChecked(adj.hotPixels);
+    hotSensitivitySlider_->setValue(adj.hotSensitivity);
+    hotSensitivityLabel_->setText(QString::number(adj.hotSensitivity));
     exposureSlider_->setValue(adj.exposureEv);
     brightnessSlider_->setValue(adj.brightness);
     contrastSlider_->setValue(adj.contrast);
@@ -266,6 +328,58 @@ void ImageAdjustPanel::setMode(Mode mode)
 {
     mode_ = mode;
     scopeCombo_->setVisible(mode == Mode::Photos);
+    // En fotos no hay análisis temporal posible.
+    hotAnalyzeBtn_->setVisible(mode == Mode::Video);
+}
+
+void ImageAdjustPanel::setHotScanRunning(bool running, int sampled, int planned)
+{
+    hotAnalyzeBtn_->setEnabled(!running);
+    hotAnalyzeBtn_->setText(running ? tr("Analizando…") : tr("Analizar vídeo"));
+    if (running) {
+        hotStatusLabel_->setText(tr("Analizando %1/%2 fotogramas…")
+                                     .arg(sampled)
+                                     .arg(planned));
+    }
+}
+
+void ImageAdjustPanel::setHotScanResult(bool ok, int hotCount, int sampled,
+                                        const QString& error, bool cancelled)
+{
+    hotAnalyzeBtn_->setEnabled(true);
+    hotAnalyzeBtn_->setText(tr("Analizar vídeo"));
+
+    if (cancelled) {
+        hotStatusLabel_->setText(tr("Análisis cancelado (%1 fotogramas leídos).")
+                                     .arg(sampled));
+        return;
+    }
+    if (!ok) {
+        hotStatusLabel_->setText(error.isEmpty() ? tr("El análisis ha fallado.") : error);
+        return;
+    }
+    if (hotCount == 0) {
+        hotStatusLabel_->setText(
+            tr("Ningún píxel caliente en los %1 fotogramas analizados.").arg(sampled));
+        return;
+    }
+    hotStatusLabel_->setText(
+        tr("%1 píxeles calientes detectados en %2 fotogramas. Activa la casilla para "
+           "corregirlos.")
+            .arg(hotCount)
+            .arg(sampled));
+}
+
+void ImageAdjustPanel::setHotScanError(const QString& error)
+{
+    hotAnalyzeBtn_->setEnabled(true);
+    hotAnalyzeBtn_->setText(tr("Analizar vídeo"));
+    hotStatusLabel_->setText(error);
+}
+
+void ImageAdjustPanel::clearHotScanStatus()
+{
+    hotStatusLabel_->clear();
 }
 
 void ImageAdjustPanel::clearHistory()
@@ -303,6 +417,25 @@ void ImageAdjustPanel::onDenoiseChanged(int value)
     emit adjustEdited(currentAdjust());
 }
 
+void ImageAdjustPanel::onHotToggled(bool checked)
+{
+    hotSensitivitySlider_->setEnabled(checked);
+    noteEdit();
+    emit adjustEdited(currentAdjust());
+}
+
+void ImageAdjustPanel::onHotSensitivityChanged(int value)
+{
+    hotSensitivityLabel_->setText(QString::number(value));
+    noteEdit();
+    emit adjustEdited(currentAdjust());
+}
+
+void ImageAdjustPanel::onAnalyzeHotClicked()
+{
+    emit analyzeHotPixelsRequested();
+}
+
 void ImageAdjustPanel::onExposureChanged(int value)
 {
     const float ev = static_cast<float>(value) / 10.f;
@@ -335,6 +468,9 @@ void ImageAdjustPanel::onResetClicked()
     sodiumSlider_->setValue(0);
     mercurySlider_->setValue(0);
     denoiseSlider_->setValue(0);
+    hotCheck_->setChecked(false);
+    hotSensitivitySlider_->setValue(ImageAdjustLimits::kDefaultHotSensitivity);
+    hotSensitivityLabel_->setText(QString::number(ImageAdjustLimits::kDefaultHotSensitivity));
     exposureSlider_->setValue(0);
     brightnessSlider_->setValue(0);
     contrastSlider_->setValue(0);
@@ -371,6 +507,9 @@ void ImageAdjustPanel::onUndoClicked()
     sodiumSlider_->setValue(prev.lpSodium);
     mercurySlider_->setValue(prev.lpMercury);
     denoiseSlider_->setValue(prev.denoise);
+    hotCheck_->setChecked(prev.hotPixels);
+    hotSensitivitySlider_->setValue(prev.hotSensitivity);
+    hotSensitivityLabel_->setText(QString::number(prev.hotSensitivity));
     exposureSlider_->setValue(prev.exposureEv);
     brightnessSlider_->setValue(prev.brightness);
     contrastSlider_->setValue(prev.contrast);

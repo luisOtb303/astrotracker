@@ -7,6 +7,54 @@ versionado es [SemVer](https://semver.org/lang/es/) (MAJOR.MINOR.PATCH).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-05
+
+### Added
+
+- **Filtro de píxeles calientes para fotos RAW**: un deslizador de agresividad
+  (desactivado por defecto) que limpia los fotositos quemados **sobre el mosaico
+  Bayer, antes del debayer**, que es la única capa donde se pueden separar por
+  color sin ambigüedad. El umbral está en sigmas del ruido robusto local
+  (mediana + MAD) más un test de aislamiento, y la corrección sustituye por la
+  mediana de los vecinos **del mismo componente de color**, como hace PIPP. El
+  rango del deslizador (10–30 sigmas) sale de mediciones sobre los RAW de
+  referencia: fuera de esa banda no hay más agresividad útil, solo ruido o una
+  imagen intacta.
+- **Mapa temporal de píxeles calientes para vídeo**: analiza varios fotogramas y
+  marca solo los píxeles que se repiten en la misma posición. Un quemado del sensor
+  está siempre en el mismo sitio; una estrella se mueve por el seeing, la deriva
+  del trípode y el registro, así que el contraste entre ambos es lo que permite
+  separarlos. El análisis va en un hilo aparte con barra de progreso y botón de
+  cancelar, y el resultado se propaga hasta la exportación.
+
+### Fixed
+
+- **Cero `ACCESS_VIOLATION` al filtrar un RAW de 18 Mpx.** El desplazamiento del
+  área activa se calculaba en bytes pero se sumaba a un puntero a `uint16_t`, que
+  avanza en elementos: la vista quedaba al doble de distancia, se salía ~466 KB
+  por encima del final del buffer y provocaba un fallo a mitad de imagen. El
+  síntoma más engañoso era que todas las comprobaciones de límites daban "dentro
+  de rango", porque derivaban del mismo offset ya equivocado.
+- **El mapa temporal de vídeo ahora funciona.** `HotPixelMap::fromVideo()`
+  acumulaba `255` por fotograma en lugar de `1` al sumar la máscara candidata, con
+  lo que el criterio de repetición quedaba anulado y el mapa marcaba las estrellas
+  igual que los quemados, justo lo contrario de lo que ese detector existe para
+  hacer.
+- **Cancelar el análisis de vídeo ya no produce un mapa engañoso.** Al cancelar
+  después de dos o más fotogramas se devolvía un mapa parcial marcado como válido,
+  que llegaba hasta la exportación. Ahora se descarta.
+- **Se rechazan los vídeos de un solo fotograma**, donde no hay contra qué
+  comparar y el mapa resultante no significa nada.
+
+### Changed
+
+- **Ningún test sin target en CTest.** `test_hotpixels` estaba escrito pero nunca
+  se compiló, y al conectarlo aparecieron los tres fallos anteriores: ningún test
+  que no se ejecuta verifica nada.
+- El filtro espacial sobre la imagen ya demosaicada deja de usarse como
+  corrección automática en fotos; solo queda comodescriptor por fotograma para
+  construir el mapa temporal, donde sí es fiable.
+
 ## [0.6.0] - 2026-10-03
 
 ### Added

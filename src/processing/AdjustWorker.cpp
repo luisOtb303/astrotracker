@@ -13,6 +13,15 @@ void AdjustWorker::setSource(const cv::Mat& src)
 {
     QMutexLocker lock(&mutex_);
     source_ = src.empty() ? cv::Mat() : src.clone();
+    // El mapa de píxeles calientes pertenece al frame de referencia: al
+    // cambiar de fotograma ya no encaja en tamaño y no debe aplicarse.
+    hotMask_ = cv::Mat();
+}
+
+void AdjustWorker::setHotMask(const cv::Mat& mask)
+{
+    QMutexLocker lock(&mutex_);
+    hotMask_ = mask.empty() ? cv::Mat() : mask.clone();
 }
 
 bool AdjustWorker::request(const ImageAdjust& adj)
@@ -93,13 +102,14 @@ void AdjustWorker::run()
         const ImageAdjust adj = requested_;
         const quint64 seq = appliedSeq_;
         const cv::Mat src = source_;
+        const cv::Mat mask = hotMask_;
         hasRequested_ = false;
         busy_ = true;
         lock.unlock();
 
         cv::Mat out;
         if (!src.empty())
-            out = img::apply(src, adj);
+            out = img::apply(src, adj, mask);
 
         lock.relock();
         busy_ = false;
